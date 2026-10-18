@@ -1,0 +1,78 @@
+site_name: ShoppingCart
+site_description: A lean, self-hosted shopping list and wishlist app for a household.
+site_url: https://laurits7.github.io/ShoppingCart/
+repo_url: https://github.com/Laurits7/ShoppingCart
+repo_name: Laurits7/ShoppingCart
+edit_uri: edit/main/docs/
+copyright: GPL-3.0
+
+theme:
+  name: material
+  icon:
+    logo: material/cart-outline
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: green
+      accent: green
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: green
+      accent: green
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Features: features.md
+  - Getting started:
+      - Install: getting-started/install.md
+      - Configuration: getting-started/configuration.md
+      - HTTPS and the phone app: getting-started/https.md
+      - Backups and updates: getting-started/backups-and-updates.md
+  - Guides:
+      - Shops and lists: guides/shopping.md
+      - Brands and pictures: guides/products.md
+      - Wishlists and gifts: guides/wishlists.md
+      - Households and sharing: guides/sharing.md
+      - Mealie: guides/mealie.md
+      - Streamline: guides/streamline.md
+      - Security: guides/security.md
+  - Reference:
+      - API: api.md
+  - Development:
+      - Developing: development/index.md
+  - Project:
+      - Specification: SPEC.md
+      - Work plan: WORKPLAN.md
+      - Decisions: DECISIONS.md

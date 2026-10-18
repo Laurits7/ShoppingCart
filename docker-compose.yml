@@ -1,0 +1,33 @@
+services:
+  shoppingcart:
+    # Builds from source. Once releases exist you can use the prebuilt image instead:
+    # remove `build:` and set `image: ghcr.io/laurits7/shoppingcart:latest`.
+    build:
+      context: .
+      # On a low-memory device, uncomment to reduce RAM needed while compiling:
+      # args:
+      #   LTO: thin
+      #   CODEGEN_UNITS: "16"
+    image: shoppingcart:latest
+    container_name: shoppingcart
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3100}:3100"
+    volumes:
+      - ./data:/data
+    # Runs as you (not root), so ./data stays yours. Set PUID/PGID if your user id isn't 1000
+    # (`id -u`). Nothing but /data is writable.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      LOG_LEVEL: info
+      # Optional: create the first admin automatically (otherwise the web UI asks on first visit).
+      # INITIAL_ADMIN_USER: admin
+      # INITIAL_ADMIN_PASSWORD: change-me-please
+      # Behind an HTTPS reverse proxy (Caddy, Traefik, Tailscale serve):
+      # TRUST_PROXY: "true"
+      # PUBLIC_URL: https://cart.example.com

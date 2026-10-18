@@ -1,0 +1,8 @@
+site/
+.venv/
+target/
+web/node_modules/
+web/dist/
+# ./data is the app data folder; it ships empty so a clone owns it (the container writes as you).
+data/*
+!data/.gitkeep

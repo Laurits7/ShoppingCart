@@ -1,0 +1,11 @@
+{
+  "name": "ShoppingCart",
+  "short_name": "Cart",
+  "description": "Shopping lists and wishlists for your household",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f6f3",
+  "theme_color": "#15803d",
+  "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

@@ -1,0 +1,79 @@
+# Decisions
+
+Short log of confirmed decisions and deviations from [`SPEC.md`](SPEC.md). Newest at the bottom.
+Format: **D-n · date · topic**: decision. *Why / notes.*
+
+## Owner's answers (2026-10-18)
+
+- **D-1 · 2026-10-18 · Default list**: Both meanings: each shop has a **default list** (where
+  quick-add, the API and Mealie put items) **and** a **staples** template. *Spec §6.2, §6.3.*
+- **D-2 · 2026-10-18 · Gift-list privacy**: A gift list is hidden from its recipient; everyone
+  else who can see it can claim items ("I'll get this") to avoid duplicate gifts. *Spec §6.9, §7.3.*
+- **D-3 · 2026-10-18 · Mealie**: Pull only: poll a chosen Mealie shopping list, import unchecked
+  items into a shop's list, tick them in Mealie (Mealie as inbox). No two-way sync, no recipe
+  import in v1. *Spec §6.10.*
+- **D-4 · 2026-10-18 · Streamline**: ShoppingCart exposes a summary API; the Streamline side
+  ("Go shopping: <Shop>" task) is specified here and built later in the Streamline repo.
+  *Spec §6.11.*
+- **D-5 · 2026-10-18 · Ownership and sharing**: Shopping lists belong to a **user** and are
+  private by default. The owner can share a list with a household or invite individual users.
+  Households are share targets, not owners. Wishlists follow the same model. *Spec §5.4, §6.8.*
+
+## Open questions (WORKPLAN Part C)
+
+All proposed defaults (Q-1 … Q-10) were accepted by the owner on 2026-10-18.
+
+- **D-12 · Q-1 Ticked items**: move to *In the cart*; **Finish shopping** removes them (10 s undo).
+- **D-13 · Q-2 Viewers**: read only, can't tick.
+- **D-14 · Q-3 Own wishlist**: private by default.
+- **D-15 · Q-4 Claims on gift lists**: visible with the claimer's name to everyone who can see the list except the recipient.
+- **D-16 · Q-5 Mealie after import**: tick in Mealie (configurable).
+- **D-17 · Q-6 Language**: English in v1, strings centralised for Estonian later.
+- **D-18 · Q-7 Currency**: per-user setting, default EUR.
+- **D-19 · Q-8 Accounts**: admin creates users; no sign-up or invite links in v1.
+- **D-20 · Q-9 Catalogue**: per user.
+- **D-21 · Q-10 Pictures**: Open Food Facts (on by default, `PRODUCT_LOOKUP=off`) plus own photos; products per user, visible to people on a shared list through its items.
+
+## Architecture
+
+- **D-6 · 2026-10-18 · Stack**: Same as Streamline: Rust (Axum, sqlx/SQLite), Svelte 5 + Vite
+  SPA embedded in one static binary, `scratch` image, MkDocs Material. *The owner asked for Rust
+  and leanness; reusing Streamline's stack and conventions keeps both apps maintainable alike.*
+- **D-7 · 2026-10-18 · Categories per list**: Categories belong to a list (not to the shop), so
+  a shared list carries its own layout. A new list copies the categories of its shop's default
+  list; only a shop's very first list gets starter categories. *Because sharing is per list
+  (D-5), shop-level categories would leak the owner's shop setup or be uneditable for guests.*
+- **D-8 · 2026-10-18 · Share roles**: `editor` (everything on items and categories) and `viewer`
+  (read only). Only the owner manages the list itself and its shares. *Confirmed by D-13.*
+- **D-9 · 2026-10-18 · Default port 3100**: so it runs next to Streamline (3000) without
+  remapping.
+- **D-10 · 2026-10-18 · Amounts and item catalogue (owner request)**: Items have a numeric
+  `amount` + optional `unit` (instead of free-text quantity) so −/+ buttons can step them; step
+  by unit (1 / 0.5 kg,l / 100 g,ml) or per item. Every added item is recorded in a per-user
+  **item catalogue** that drives instant client-side suggestions, frequent-item chips and
+  auto-categorising, and can be managed in Settings. Adding a duplicate adds to its amount.
+  *Spec §5.2, §6.4, §6.4a.*
+- **D-11 · 2026-10-18 · Products, brands and pictures (owner request)**: A catalogue item can
+  have several **products** (brand, name, barcode, picture) with a preferred one (optionally
+  per shop); list items are generic or pinned to a product and show its picture. Pictures are
+  pulled from **Open Food Facts** server-side, or uploaded/photographed, and stored resized in
+  `data/images`. New Phase 3b. *Spec §5.2, §6.4b, §7.4.*
+
+## Phase 1 (2026-10-18)
+
+- **D-22 · Households**: any user can create a household and becomes its owner (the spec said
+  admins and owners); owners and admins manage members, anyone can leave, and a household always
+  keeps an owner (the longest-standing member is promoted). *Households only grant what is
+  explicitly shared with them, so letting anyone create one carries no risk.*
+- **D-23 · UI strings inline for now**: strings live in the components until a second language is
+  actually added; extracting them is a mechanical chunk then. *Revises D-17; keeps the bundle and
+  code simple meanwhile.*
+- **D-24 · Container user**: the image runs as UID 10001; the compose file runs it as
+  `${PUID:-1000}:${PGID:-1000}` with a read-only root filesystem, no capabilities and
+  `no-new-privileges`, so `./data` (shipped empty in the repo) stays owned by the person who
+  cloned it. The server refuses to start with a clear fix if `/data` isn't writable.
+- **D-25 · Credentials need a browser session**: API tokens can't change passwords, list or revoke
+  sessions, or create/revoke tokens or users; `read` tokens are refused on anything but
+  GET/HEAD. Sessions slide (refreshed at most hourly) and expired ones are purged hourly.
+- **D-26 · Argon2id parameters**: OWASP minimum (19 MiB, t=2, p=1), at most two hashes at once to
+  bound memory on a Pi.
