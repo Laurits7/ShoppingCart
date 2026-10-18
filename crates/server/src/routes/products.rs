@@ -49,8 +49,9 @@ pub async fn synced_products(
     sqlx::query_as(&format!(
         "SELECT {COLS} FROM products WHERE deleted_at IS NULL AND (
              (user_id = ?1 AND rev > ?2)
-             OR (user_id != ?1 AND id IN (SELECT i.product_id FROM items i JOIN lists l ON l.id = i.list_id
-                                          WHERE {} AND i.deleted_at IS NULL)))
+             OR (user_id != ?1 AND id IN (SELECT i.product_id FROM items i
+                                          WHERE i.product_id IS NOT NULL AND i.deleted_at IS NULL
+                                            AND i.list_id IN (SELECT l.id FROM lists l WHERE {}))))
          ORDER BY catalog_item_id, position, id",
         crate::visibility::VISIBLE_LISTS
     ))
@@ -262,13 +263,13 @@ pub async fn patch(
     Ok(Json(product))
 }
 
-/// Forget products matching `cond` (bound to `id`): items and staples pinned to them become
+/// Forget products matching `cond` (bound to `id`): items pinned to them become
 /// generic, preferences for them go.
 pub async fn tombstone(conn: &mut SqliteConnection, cond: &str, id: &str) -> sqlx::Result<()> {
     let rev = next_rev(conn).await?;
     let ts = now();
     let gone = format!("SELECT id FROM products WHERE {cond}");
-    for table in ["items", "staples"] {
+    for table in ["items"] {
         sqlx::query(&format!(
             "UPDATE {table} SET product_id = NULL, updated_at = ?1, rev = ?2 WHERE product_id IN ({gone})"
         ))

@@ -1,4 +1,6 @@
-//! Shops and lists (SPEC §6.1, §6.2), and the one-request load of the Shopping tab.
+//! Shops, lists, templates and the inbox (SPEC §6.1–6.3, D-65). A shop has shopping lists
+//! and templates (usual items to start lists from); a new list can be a copy of a template.
+//! Items that come without a list (Mealie, the API) land in the user's inbox.
 
 use axum::{
     Json,
@@ -22,7 +24,7 @@ use crate::{
     visibility::{self, Need, VISIBLE_LISTS},
 };
 
-const SHOP_COLS: &str = "id, name, color, position, default_list_id, created_at, updated_at, rev";
+const SHOP_COLS: &str = "id, name, color, position, created_at, updated_at, rev";
 
 pub async fn load_shop(conn: &mut SqliteConnection, id: &str) -> sqlx::Result<Option<Shop>> {
     sqlx::query_as(&format!(
@@ -52,15 +54,14 @@ pub async fn user_shops(
 fn list_select(cond: &str) -> String {
     let role = visibility::role_sql();
     format!(
-        "SELECT l.id, l.shop_id, l.owner_id, l.name, l.position, l.archived_at,
-                COALESCE(s.default_list_id = l.id, 0) AS is_default, {role} AS role,
-                s.name AS shop_name, u.display_name AS owner_name,
+        "SELECT l.id, l.shop_id, l.owner_id, l.kind, l.name, l.position, l.archived_at, {role} AS role,
+                COALESCE(s.name, '') AS shop_name, u.display_name AS owner_name,
                 (SELECT COUNT(*) FROM items i
                  WHERE i.list_id = l.id AND i.deleted_at IS NULL AND i.checked_at IS NULL) AS open_count,
                 l.created_at, l.updated_at, l.rev
-         FROM lists l JOIN shops s ON s.id = l.shop_id JOIN users u ON u.id = l.owner_id
+         FROM lists l LEFT JOIN shops s ON s.id = l.shop_id JOIN users u ON u.id = l.owner_id
          WHERE {VISIBLE_LISTS} AND {cond}
-         ORDER BY s.position, l.position, l.id"
+         ORDER BY l.kind = 'inbox' DESC, s.position, l.position, l.id"
     )
 }
 
@@ -115,21 +116,66 @@ async fn bump_list(conn: &mut SqliteConnection, id: &str) -> sqlx::Result<()> {
     Ok(())
 }
 
-/// Insert a list into a shop with its categories: a copy of the default list's, or the
-/// starter set for a shop's first list (D-7).
+/// The user's inbox (created on first use): where items without a list arrive.
+pub async fn inbox_id(conn: &mut SqliteConnection, user_id: &str) -> sqlx::Result<String> {
+    let found: Option<String> = sqlx::query_scalar(
+        "SELECT id FROM lists WHERE owner_id = ? AND kind = 'inbox' AND deleted_at IS NULL",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    if let Some(id) = found {
+        return Ok(id);
+    }
+    let id = crate::util::new_id();
+    let rev = next_rev(conn).await?;
+    let ts = now();
+    sqlx::query(
+        "INSERT INTO lists (id, shop_id, owner_id, kind, name, position, created_at, updated_at, rev)
+         VALUES (?, NULL, ?, 'inbox', 'Inbox', 'V', ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(user_id)
+    .bind(&ts)
+    .bind(&ts)
+    .bind(rev)
+    .execute(conn)
+    .await?;
+    Ok(id)
+}
+
+/// The kind of a live list, if it exists.
+pub async fn list_kind(conn: &mut SqliteConnection, id: &str) -> sqlx::Result<Option<String>> {
+    sqlx::query_scalar("SELECT kind FROM lists WHERE id = ? AND deleted_at IS NULL")
+        .bind(id)
+        .fetch_optional(conn)
+        .await
+}
+
+/// Insert a list or template into a shop. With a template its categories and items are
+/// copied (the items not ticked); without one, the categories of the shop's most recent list
+/// or template, or the starter set for a shop's first (D-7).
 async fn insert_list(
     conn: &mut SqliteConnection,
     user_id: &str,
     shop_id: &str,
     list_id: &str,
     list_name: &str,
+    kind: &str,
+    template: Option<&str>,
 ) -> ApiResult<()> {
-    let default_list: Option<Option<String>> =
-        sqlx::query_scalar("SELECT default_list_id FROM shops WHERE id = ?")
+    let from: Option<String> =
+        match template {
+            Some(t) => Some(t.to_string()),
+            None => sqlx::query_scalar(
+                "SELECT id FROM lists WHERE shop_id = ? AND deleted_at IS NULL AND kind != 'inbox'
+             ORDER BY created_at DESC, id DESC LIMIT 1",
+            )
             .bind(shop_id)
             .fetch_optional(&mut *conn)
-            .await?;
-    let names: Vec<String> = match default_list.flatten() {
+            .await?,
+        };
+    let names: Vec<String> = match &from {
         Some(d) => {
             sqlx::query_scalar(
                 "SELECT name FROM categories WHERE list_id = ? AND deleted_at IS NULL ORDER BY position, id",
@@ -147,12 +193,13 @@ async fn insert_list(
     let rev = next_rev(conn).await?;
     let ts = now();
     sqlx::query(
-        "INSERT INTO lists (id, shop_id, owner_id, name, position, created_at, updated_at, rev)
-         VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO lists (id, shop_id, owner_id, kind, name, position, created_at, updated_at, rev)
+         VALUES (?,?,?,?,?,?,?,?,?)",
     )
     .bind(list_id)
     .bind(shop_id)
     .bind(user_id)
+    .bind(kind)
     .bind(list_name)
     .bind(&position)
     .bind(&ts)
@@ -178,6 +225,26 @@ async fn insert_list(
         .execute(&mut *conn)
         .await?;
         pos = Some(p);
+    }
+    if let Some(t) = template {
+        // The template's items, in its categories of the same name, in its order.
+        sqlx::query(
+            "INSERT INTO items (id, list_id, category_id, catalog_item_id, product_id, name, amount, unit, step, note,
+                                position, added_by, source, created_at, updated_at, rev)
+             SELECT upper(hex(randomblob(13))), ?1,
+                    (SELECT n.id FROM categories n JOIN categories o ON lower(o.name) = lower(n.name)
+                     WHERE n.list_id = ?1 AND n.deleted_at IS NULL AND o.id = i.category_id LIMIT 1),
+                    i.catalog_item_id, i.product_id, i.name, i.amount, i.unit, i.step, i.note,
+                    i.position, ?2, 'staple', ?3, ?3, ?4
+             FROM items i WHERE i.list_id = ?5 AND i.deleted_at IS NULL",
+        )
+        .bind(list_id)
+        .bind(user_id)
+        .bind(&ts)
+        .bind(rev)
+        .bind(t)
+        .execute(&mut *conn)
+        .await?;
     }
     Ok(())
 }
@@ -226,7 +293,7 @@ pub struct CreateShop {
     name: String,
     /// `#rrggbb`.
     color: Option<String>,
-    /// Optional client-chosen ULID for the shop's default list.
+    /// Optional client-chosen ULID for the shop's first list.
     list_id: Option<String>,
 }
 
@@ -254,7 +321,7 @@ async fn shop_bundle(
     })
 }
 
-#[utoipa::path(post, path = "/shops", tag = "shopping", summary = "Create a shop with its default list", request_body = CreateShop, responses((status = 200, body = ShopBundle), (status = 400, body = crate::error::Problem), (status = 409, body = crate::error::Problem)))]
+#[utoipa::path(post, path = "/shops", tag = "shopping", summary = "Create a shop with a first shopping list", request_body = CreateShop, responses((status = 200, body = ShopBundle), (status = 400, body = crate::error::Problem), (status = 409, body = crate::error::Problem)))]
 pub async fn create_shop(
     State(state): State<AppState>,
     user: AuthUser,
@@ -308,13 +375,10 @@ pub async fn create_shop(
         &id,
         &list_id,
         shopping::DEFAULT_LIST_NAME,
+        "list",
+        None,
     )
     .await?;
-    sqlx::query("UPDATE shops SET default_list_id = ? WHERE id = ?")
-        .bind(&list_id)
-        .bind(&id)
-        .execute(&mut *tx)
-        .await?;
     let bundle = shop_bundle(&mut tx, user.id(), &id).await?;
     tx.commit().await?;
     Ok(Json(bundle))
@@ -327,11 +391,9 @@ pub struct PatchShop {
     #[serde(default, deserialize_with = "double_option")]
     #[schema(value_type = Option<String>)]
     color: Option<Option<String>>,
-    /// Make this list (of the shop, not archived) the default list.
-    default_list_id: Option<String>,
 }
 
-#[utoipa::path(patch, path = "/shops/{id}", tag = "shopping", summary = "Rename or recolour a shop, or choose its default list", params(("id" = String, Path, description = "ULID")), request_body = PatchShop, responses((status = 200, body = Shop), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
+#[utoipa::path(patch, path = "/shops/{id}", tag = "shopping", summary = "Rename or recolour a shop", params(("id" = String, Path, description = "ULID")), request_body = PatchShop, responses((status = 200, body = Shop), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
 pub async fn patch_shop(
     State(state): State<AppState>,
     user: AuthUser,
@@ -355,47 +417,13 @@ pub async fn patch_shop(
             .execute(&mut *tx)
             .await?;
     }
-    if let Some(list_id) = p.default_list_id {
-        set_default(&mut tx, &id, &list_id).await?;
-    }
     bump_shop(&mut tx, &id).await?;
     let shop = load_shop(&mut tx, &id).await?.ok_or(AppError::NotFound)?;
     tx.commit().await?;
     Ok(Json(shop))
 }
 
-async fn set_default(conn: &mut SqliteConnection, shop_id: &str, list_id: &str) -> ApiResult<()> {
-    let archived: Option<Option<String>> = sqlx::query_scalar(
-        "SELECT archived_at FROM lists WHERE id = ? AND shop_id = ? AND deleted_at IS NULL",
-    )
-    .bind(list_id)
-    .bind(shop_id)
-    .fetch_optional(&mut *conn)
-    .await?;
-    match archived {
-        None => return Err(bad("that list isn't in this shop")),
-        Some(Some(_)) => return Err(bad("an archived list can't be the default")),
-        Some(None) => {}
-    }
-    let old: Option<String> = sqlx::query_scalar("SELECT default_list_id FROM shops WHERE id = ?")
-        .bind(shop_id)
-        .fetch_one(&mut *conn)
-        .await?;
-    sqlx::query("UPDATE shops SET default_list_id = ? WHERE id = ?")
-        .bind(list_id)
-        .bind(shop_id)
-        .execute(&mut *conn)
-        .await?;
-    // Both lists' `is_default` changed.
-    if let Some(old) = old.filter(|o| o != list_id) {
-        bump_list(conn, &old).await?;
-    }
-    bump_list(conn, list_id).await?;
-    bump_shop(conn, shop_id).await?;
-    Ok(())
-}
-
-#[utoipa::path(delete, path = "/shops/{id}", tag = "shopping", summary = "Delete a shop with all its lists, items and staples", params(("id" = String, Path, description = "ULID")), responses((status = 204, description = "Done"), (status = 404, body = crate::error::Problem)))]
+#[utoipa::path(delete, path = "/shops/{id}", tag = "shopping", summary = "Delete a shop with all its lists and templates", params(("id" = String, Path, description = "ULID")), responses((status = 204, description = "Done"), (status = 404, body = crate::error::Problem)))]
 pub async fn delete_shop(
     State(state): State<AppState>,
     user: AuthUser,
@@ -406,17 +434,14 @@ pub async fn delete_shop(
     tombstone_lists(&mut tx, "shop_id = ?3", &id).await?;
     let rev = next_rev(&mut tx).await?;
     let ts = now();
-    for table in ["staples", "shops"] {
-        let col = if table == "shops" { "id" } else { "shop_id" };
-        sqlx::query(&format!(
-            "UPDATE {table} SET deleted_at = ?1, updated_at = ?1, rev = ?2 WHERE {col} = ?3 AND deleted_at IS NULL"
-        ))
-        .bind(&ts)
-        .bind(rev)
-        .bind(&id)
-        .execute(&mut *tx)
-        .await?;
-    }
+    sqlx::query(
+        "UPDATE shops SET deleted_at = ?1, updated_at = ?1, rev = ?2 WHERE id = ?3 AND deleted_at IS NULL",
+    )
+    .bind(&ts)
+    .bind(rev)
+    .bind(&id)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("DELETE FROM catalog_shop_uses WHERE shop_id = ?")
         .bind(&id)
         .execute(&mut *tx)
@@ -431,7 +456,7 @@ pub async fn delete_shop(
 
 // ---- lists -------------------------------------------------------------------------------
 
-#[utoipa::path(get, path = "/lists", tag = "shopping", summary = "Lists you can see, with their open item counts", responses((status = 200, body = Vec<ShoppingList>), (status = 401, body = crate::error::Problem)))]
+#[utoipa::path(get, path = "/lists", tag = "shopping", summary = "Lists, templates and your inbox, with their open item counts", responses((status = 200, body = Vec<ShoppingList>), (status = 401, body = crate::error::Problem)))]
 pub async fn list_lists(
     State(state): State<AppState>,
     user: AuthUser,
@@ -459,6 +484,10 @@ pub struct CreateList {
     id: Option<String>,
     shop_id: String,
     name: String,
+    /// `list` (default) or `template`.
+    kind: Option<String>,
+    /// Start from this template: its categories and items are copied.
+    template_id: Option<String>,
 }
 
 /// A list with its categories.
@@ -481,7 +510,7 @@ async fn list_bundle(
     Ok(ListBundle { list, categories })
 }
 
-#[utoipa::path(post, path = "/lists", tag = "shopping", summary = "Create a list in one of your shops (it copies the default list's categories)", request_body = CreateList, responses((status = 200, body = ListBundle), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem), (status = 409, body = crate::error::Problem)))]
+#[utoipa::path(post, path = "/lists", tag = "shopping", summary = "Create a list or template in one of your shops, empty (with the categories of the shop's latest list) or from a template", request_body = CreateList, responses((status = 200, body = ListBundle), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem), (status = 409, body = crate::error::Problem)))]
 pub async fn create_list(
     State(state): State<AppState>,
     user: AuthUser,
@@ -489,16 +518,36 @@ pub async fn create_list(
 ) -> ApiResult<Json<ListBundle>> {
     let id = id_or_new(c.id)?;
     let lname = name("name", &c.name, shopping::MAX_NAME_CHARS)?;
+    let kind = c.kind.as_deref().unwrap_or("list");
+    if kind != "list" && kind != "template" {
+        return Err(bad("kind must be list or template"));
+    }
     let mut tx = state.db.write.begin().await?;
     if let Some(l) = load_list(&mut tx, user.id(), &id).await? {
-        return if l.shop_id == c.shop_id {
+        return if l.shop_id.as_deref() == Some(c.shop_id.as_str()) {
             Ok(Json(list_bundle(&mut tx, user.id(), &id).await?))
         } else {
             Err(AppError::Conflict("id already in use".into()))
         };
     }
     visibility::require_shop(&mut tx, &user, &c.shop_id).await?;
-    insert_list(&mut tx, user.id(), &c.shop_id, &id, &lname).await?;
+    if let Some(t) = &c.template_id {
+        // Any template you can see (also one shared with you), never another kind of list.
+        visibility::require_list(&mut tx, &user, t, Need::Read).await?;
+        if list_kind(&mut tx, t).await?.as_deref() != Some("template") {
+            return Err(bad("that isn't a template"));
+        }
+    }
+    insert_list(
+        &mut tx,
+        user.id(),
+        &c.shop_id,
+        &id,
+        &lname,
+        kind,
+        c.template_id.as_deref(),
+    )
+    .await?;
     let bundle = list_bundle(&mut tx, user.id(), &id).await?;
     tx.commit().await?;
     Ok(Json(bundle))
@@ -508,11 +557,9 @@ pub async fn create_list(
 pub struct PatchList {
     name: Option<String>,
     archived: Option<bool>,
-    /// `true` makes this the shop's default list.
-    is_default: Option<bool>,
 }
 
-#[utoipa::path(patch, path = "/lists/{id}", tag = "shopping", summary = "Rename, archive or make a list the default (owner)", params(("id" = String, Path, description = "ULID")), request_body = PatchList, responses((status = 200, body = ShoppingList), (status = 400, body = crate::error::Problem), (status = 403, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
+#[utoipa::path(patch, path = "/lists/{id}", tag = "shopping", summary = "Rename or archive a list or template (owner)", params(("id" = String, Path, description = "ULID")), request_body = PatchList, responses((status = 200, body = ShoppingList), (status = 400, body = crate::error::Problem), (status = 403, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
 pub async fn patch_list(
     State(state): State<AppState>,
     user: AuthUser,
@@ -521,9 +568,7 @@ pub async fn patch_list(
 ) -> ApiResult<Json<ShoppingList>> {
     let mut tx = state.db.write.begin().await?;
     visibility::require_list(&mut tx, &user, &id, Need::Manage).await?;
-    let list = load_list(&mut tx, user.id(), &id)
-        .await?
-        .ok_or(AppError::NotFound)?;
+    not_inbox(&mut tx, &id).await?;
     if let Some(n) = p.name {
         sqlx::query("UPDATE lists SET name = ? WHERE id = ?")
             .bind(name("name", &n, shopping::MAX_NAME_CHARS)?)
@@ -532,26 +577,12 @@ pub async fn patch_list(
             .await?;
     }
     if let Some(a) = p.archived {
-        if a && list.is_default && p.is_default != Some(false) {
-            return Err(bad(
-                "the default list can't be archived; make another list the default first",
-            ));
-        }
         sqlx::query("UPDATE lists SET archived_at = CASE WHEN ? THEN COALESCE(archived_at, ?) END WHERE id = ?")
             .bind(a)
             .bind(now())
             .bind(&id)
             .execute(&mut *tx)
             .await?;
-    }
-    match p.is_default {
-        Some(true) => set_default(&mut tx, &list.shop_id, &id).await?,
-        Some(false) if list.is_default => {
-            return Err(bad(
-                "make another list the default instead (every shop has one)",
-            ));
-        }
-        _ => {}
     }
     bump_list(&mut tx, &id).await?;
     let list = load_list(&mut tx, user.id(), &id)
@@ -561,7 +592,7 @@ pub async fn patch_list(
     Ok(Json(list))
 }
 
-#[utoipa::path(delete, path = "/lists/{id}", tag = "shopping", summary = "Delete a list with its items (owner; not the default list)", params(("id" = String, Path, description = "ULID")), responses((status = 204, description = "Done"), (status = 403, body = crate::error::Problem), (status = 404, body = crate::error::Problem), (status = 409, description = "It's the shop's default list", body = crate::error::Problem)))]
+#[utoipa::path(delete, path = "/lists/{id}", tag = "shopping", summary = "Delete a list or template with its items (owner)", params(("id" = String, Path, description = "ULID")), responses((status = 204, description = "Done"), (status = 400, description = "The inbox can't be deleted", body = crate::error::Problem), (status = 403, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
 pub async fn delete_list(
     State(state): State<AppState>,
     user: AuthUser,
@@ -569,14 +600,7 @@ pub async fn delete_list(
 ) -> ApiResult<StatusCode> {
     let mut tx = state.db.write.begin().await?;
     visibility::require_list(&mut tx, &user, &id, Need::Manage).await?;
-    let list = load_list(&mut tx, user.id(), &id)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    if list.is_default {
-        return Err(AppError::Conflict(
-            "the default list can't be deleted; make another list the default first".into(),
-        ));
-    }
+    not_inbox(&mut tx, &id).await?;
     tombstone_lists(&mut tx, "id = ?3", &id).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -619,6 +643,7 @@ pub async fn move_list(
 ) -> ApiResult<Json<ShoppingList>> {
     let mut tx = state.db.write.begin().await?;
     visibility::require_list(&mut tx, &user, &id, Need::Manage).await?;
+    not_inbox(&mut tx, &id).await?;
     let shop_id: String = sqlx::query_scalar("SELECT shop_id FROM lists WHERE id = ?")
         .bind(&id)
         .fetch_one(&mut *tx)
@@ -642,4 +667,12 @@ pub async fn move_list(
         .ok_or(AppError::NotFound)?;
     tx.commit().await?;
     Ok(Json(list))
+}
+
+/// The inbox stays as it is: not renamed, archived, deleted, moved or shared.
+pub async fn not_inbox(conn: &mut SqliteConnection, id: &str) -> ApiResult<()> {
+    if list_kind(conn, id).await?.as_deref() == Some("inbox") {
+        return Err(bad("the inbox can't be changed like a list"));
+    }
+    Ok(())
 }

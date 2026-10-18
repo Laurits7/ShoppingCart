@@ -1,6 +1,7 @@
 <script lang="ts">
-  // One list on the summary page: its open items to tick and step right there, a compact
-  // quick add, and the cart with Finish shopping. The title opens the full list.
+  // One list on the summary page: its items to tick and step right there (ticked ones at the
+  // end, greyed and struck through), a compact quick add and Done. The title opens the full
+  // list. The inbox uses it too, with "Assign" on each item instead.
   import type { Item } from '../../lib/api/types/Item'
   import type { ShoppingList } from '../../lib/api/types/ShoppingList'
   import { collapsed } from '../../lib/collapsed.svelte'
@@ -13,16 +14,20 @@
   let {
     list,
     onedit,
-    onstaples,
+    ontemplate,
     onmenu,
     onpicture,
+    onassign,
   }: {
     list: ShoppingList
     onedit: (item: Item, focus?: 'amount') => void
-    onstaples: (list: ShoppingList) => void
+    ontemplate: (list: ShoppingList) => void
     onmenu: (list: ShoppingList) => void
     onpicture: (item: Item) => void
+    /** Inbox only: move an item to a list. */
+    onassign?: (item: Item) => void
   } = $props()
+  const inbox = $derived(list.kind === 'inbox')
 
   const readonly = $derived(list.role === 'viewer')
   const sections = $derived(shopping.sections(list.id))
@@ -30,7 +35,6 @@
   const open = $derived(sections.reduce((n, s) => n + s.items.length, 0))
   const key = $derived(`list:${list.id}`)
   const isCollapsed = $derived(collapsed.has(key))
-  let showCart = $state(false)
 
   // Items can be dropped here from any list on the page.
   const itemDrop = (categoryId: string | null) => ({
@@ -48,56 +52,53 @@
   class="card"
   data-id={list.id}
   data-label={list.name}
-  use:draggable={{ item: () => ({ kind: 'list', id: list.id, shopId: list.shop_id }), disabled: list.role !== 'owner', handleOnly: true }}
+  use:draggable={{ item: () => ({ kind: 'list', id: list.id, shopId: list.shop_id ?? '' }), disabled: list.role !== 'owner' || inbox, handleOnly: true }}
 >
   <header>
-    {#if list.role === 'owner'}
-      <span class="grip" data-handle tabindex="0" role="button" aria-label="Move list {list.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
+    {#if list.role === 'owner' && !inbox}
+      <span class="grip" data-handle tabindex="0" role="button" aria-describedby="dnd-help" aria-label="Move list {list.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
     {/if}
     <button class="icon-btn" aria-expanded={!isCollapsed} aria-label="{isCollapsed ? 'Show' : 'Hide'} items of {list.name}" onclick={() => collapsed.toggle(key)}>
       <span class="chev" class:collapsed={isCollapsed}><Icon name="chevronDown" size={18} /></span>
     </button>
-    <a class="title" href="/list/{list.id}">
+    <h3 class="heading"><a class="title" href="/list/{list.id}">
       <span>
         {list.name}
-        {#if list.role !== 'owner'}<span class="from">{list.shop_name} · {list.owner_name}{list.role === 'viewer' ? ' · view only' : ''}</span>{/if}
+        {#if inbox}<span class="from">From Mealie and other apps: assign each to a list</span>
+        {:else if list.role !== 'owner'}<span class="from">{list.shop_name} · {list.owner_name}{list.role === 'viewer' ? ' · view only' : ''}</span>{/if}
       </span>
-      {#if list.is_default && list.role === 'owner'}<span class="star" title="Default list" aria-label="default list"><Icon name="star" size={15} /></span>{/if}
-    </a>
-    <span class="badge" aria-label="{open} open items">{open}</span>
-    {#if list.role === 'owner'}
-      <button class="icon-btn" aria-label="Staples for {list.name}" title="Staples" onclick={() => onstaples(list)}><Icon name="staples" size={20} /></button>
+    </a></h3>
+    <span class="badge">{open}<span class="sr-only"> open items</span></span>
+    {#if cart.length && !readonly && !inbox}
+      <button class="btn primary small done" title="Done: clear the ticked items" onclick={() => shopping.finish(list.id)}><Icon name="check" size={16} /> Done</button>
     {/if}
-    <button class="icon-btn" aria-label="Settings of {list.name}" title="List and shop" onclick={() => onmenu(list)}><Icon name="more" /></button>
+    {#if !readonly && !inbox}
+      <button class="icon-btn" aria-label="Add from a template to {list.name}" title="Add from a template" onclick={() => ontemplate(list)}><Icon name="staples" size={20} /></button>
+    {/if}
+    {#if !inbox}
+      <button class="icon-btn" aria-label="Settings of {list.name}" title="List and shop" onclick={() => onmenu(list)}><Icon name="more" /></button>
+    {/if}
   </header>
 
   {#if !isCollapsed}
     {#if sections.length}
       {#each sections as s (s.id)}
-        {#if sections.length > 1 || s.id !== 'other'}<div class="cat" aria-hidden="true">{s.name}</div>{/if}
-        <ul use:dropList={itemDrop(s.id === 'other' ? null : s.id)}>
-          {#each s.items as item (item.id)}<ItemRow {item} {readonly} {onedit} {onpicture} />{/each}
+        {#if sections.length > 1 || s.id !== 'other'}<div class="cat">{s.name}</div>{/if}
+        <ul aria-label={s.name} use:dropList={itemDrop(s.id === 'other' ? null : s.id)}>
+          {#each s.items as item (item.id)}<ItemRow {item} {readonly} {onedit} {onpicture} {onassign} tickable={!inbox} />{/each}
         </ul>
       {/each}
-    {:else}
+    {:else if !cart.length}
       <div class="nothing" use:dropList={itemDrop(null)}><p class="muted">Nothing to buy.</p></div>
     {/if}
-    {#if !readonly}
-      <div class="add"><QuickAdd listId={list.id} shopId={list.shop_id} compact placeholder="Add to {list.name}…" /></div>
-    {/if}
     {#if cart.length}
-      <div class="cart-head">
-        <button class="cart-toggle" aria-expanded={showCart} onclick={() => (showCart = !showCart)}>
-          <span class="chev" class:collapsed={!showCart}><Icon name="chevronDown" size={16} /></span>
-          In the cart <span class="badge">{cart.length}</span>
-        </button>
-        {#if !readonly}<button class="btn primary small" onclick={() => shopping.finish(list.id)}><Icon name="check" size={16} /> Finish shopping</button>{/if}
-      </div>
-      {#if showCart}
-        <ul class="cart">
-          {#each cart as item (item.id)}<ItemRow {item} {readonly} {onedit} {onpicture} />{/each}
-        </ul>
-      {/if}
+      <!-- Got it: at the end, greyed out and struck through, until Done. -->
+      <ul class="got" aria-label="Got">
+        {#each cart as item (item.id)}<ItemRow {item} {readonly} {onedit} {onpicture} />{/each}
+      </ul>
+    {/if}
+    {#if !readonly && !inbox}
+      <div class="add"><QuickAdd listId={list.id} shopId={list.shop_id} compact placeholder="Add to {list.name}…" /></div>
     {/if}
   {/if}
 </article>
@@ -113,6 +114,11 @@
     gap: 2px;
     padding: 2px 4px 2px 0;
     background: var(--surface);
+  }
+  .heading {
+    flex: 1;
+    min-width: 0;
+    font-size: inherit;
   }
   .title {
     flex: 1;
@@ -138,10 +144,6 @@
     font-size: 12px;
     font-weight: 500;
     color: var(--muted);
-  }
-  .star {
-    display: grid;
-    color: #d4a017;
   }
   .chev {
     display: grid;
@@ -178,26 +180,8 @@
     padding: 10px 12px;
     border-top: 1px solid var(--border);
   }
-  .cart-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 6px 8px 6px 4px;
-    background: var(--surface-2);
-    border-top: 1px solid var(--border);
-  }
-  .cart-toggle {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 40px;
-    padding: 0 8px;
-    font-weight: 600;
-    font-size: 14px;
-    color: var(--muted);
-  }
-  .cart {
-    background: var(--surface-2);
+  .done {
+    flex: none;
+    margin-right: 2px;
   }
 </style>

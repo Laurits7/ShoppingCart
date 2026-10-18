@@ -100,10 +100,7 @@ async fn shop(t: &T, s: &str) -> (String, String) {
         .await;
     (
         r.json["shop"]["id"].as_str().unwrap().to_string(),
-        r.json["shop"]["default_list_id"]
-            .as_str()
-            .unwrap()
-            .to_string(),
+        r.json["lists"][0]["id"].as_str().unwrap().to_string(),
     )
 }
 
@@ -118,7 +115,7 @@ async fn mealie_as_an_inbox() {
     let (base, mealie) = fake().await;
     let t = setup().await;
     let s = t.admin().await;
-    let (shop_id, list) = shop(&t, &s).await;
+    let (_, list) = shop(&t, &s).await;
     mealie.lock().unwrap().items = vec![
         item(
             "a",
@@ -153,7 +150,7 @@ async fn mealie_as_an_inbox() {
         .unwrap()
         .to_string();
     let body = json!({"provider": "mealie", "secret": "good-token",
-                      "settings": {"base_url": format!("{base}/"), "target_shop_id": shop_id, "create_categories": true}});
+                      "settings": {"base_url": format!("{base}/"), "target_list_id": list, "create_categories": true}});
     let r = t
         .req(
             "POST",

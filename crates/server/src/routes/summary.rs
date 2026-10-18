@@ -37,7 +37,6 @@ pub struct ListSummary {
     pub owner_name: String,
     #[ts(type = "'owner' | 'editor' | 'viewer'")]
     pub role: String,
-    pub is_default: bool,
     /// Items not yet in the cart.
     #[ts(type = "number")]
     pub open_count: i64,
@@ -111,17 +110,15 @@ pub async fn summary(
         shop_name: String,
         owner_name: String,
         role: String,
-        is_default: bool,
         open_count: i64,
         updated_at: String,
     }
     let lists: Vec<Row> = sqlx::query_as(&format!(
         "SELECT l.id, l.name, l.shop_id, s.name AS shop_name, u.display_name AS owner_name, {role} AS role,
-                COALESCE(s.default_list_id = l.id, 0) AS is_default,
                 (SELECT COUNT(*) FROM items i WHERE i.list_id = l.id AND i.deleted_at IS NULL AND i.checked_at IS NULL) AS open_count,
                 MAX(l.updated_at, COALESCE((SELECT MAX(i.updated_at) FROM items i WHERE i.list_id = l.id), '')) AS updated_at
          FROM lists l JOIN shops s ON s.id = l.shop_id JOIN users u ON u.id = l.owner_id
-         WHERE {VISIBLE_LISTS} AND l.archived_at IS NULL
+         WHERE {VISIBLE_LISTS} AND l.kind = 'list' AND l.archived_at IS NULL
            AND (?2 IS NULL OR l.shop_id = ?2) AND (?3 IS NULL OR l.id = ?3)
          ORDER BY s.position, l.position, l.id"
     ))
@@ -153,7 +150,6 @@ pub async fn summary(
             shop_name: l.shop_name,
             owner_name: l.owner_name,
             role: l.role,
-            is_default: l.is_default,
             open_count: l.open_count,
             items: rows
                 .into_iter()

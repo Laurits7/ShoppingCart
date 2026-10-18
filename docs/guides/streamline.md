@@ -26,7 +26,7 @@ curl -H "Authorization: Bearer sc_…" "http://cart.local:3100/api/v1/summary?no
 
 ```json
 [{"list_id": "01J…", "list_name": "Shopping list", "shop_name": "Rimi", "owner_name": "Laurits",
-  "role": "owner", "is_default": true, "open_count": 3,
+  "role": "owner", "open_count": 3,
   "items": [{"id": "01J…", "name": "milk", "amount": "2", "category": "Dairy and eggs"},
             {"id": "01J…", "name": "flour", "amount": "1 kg", "category": null}],
   "updated_at": "2026-10-18T17:02:11.123Z",

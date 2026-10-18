@@ -13,11 +13,7 @@ base_url: string,
  */
 list_id: string | null, list_name: string | null, 
 /**
- * Items go to this shop's default list…
- */
-target_shop_id: string | null, 
-/**
- * …or to this list.
+ * Items go to this list; without one, to your inbox (to assign them to lists there).
  */
 target_list_id: string | null, 
 /**

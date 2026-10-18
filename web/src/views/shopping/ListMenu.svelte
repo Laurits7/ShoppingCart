@@ -2,6 +2,7 @@
   import type { ShoppingList } from '../../lib/api/types/ShoppingList'
   import Icon from '../../lib/components/Icon.svelte'
   import Sheet from '../../lib/components/Sheet.svelte'
+  import UpDown from '../../lib/components/UpDown.svelte'
   import { router } from '../../lib/router.svelte'
   import { shopping } from '../../lib/shopping.svelte'
   import ShareSheet from './ShareSheet.svelte'
@@ -9,6 +10,7 @@
   let { open = $bindable(false), list }: { open: boolean; list: ShoppingList } = $props()
   const shop = $derived(shopping.shop(list.shop_id))
   const owner = $derived(list.role === 'owner')
+  const siblings = $derived(list.kind === 'template' ? shopping.templatesOf(list.shop_id ?? '') : shopping.listsOf(list.shop_id ?? ''))
   let listName = $state('')
   let shopName = $state('')
   let newCategory = $state('')
@@ -35,7 +37,7 @@
     if (!confirm(`Delete the list "${list.name}"${n ? ` and its ${n} item${n === 1 ? '' : 's'}` : ''}?`)) return
     open = false
     await shopping.deleteList(list)
-    router.go('/', true)
+    router.go(list.kind === 'template' ? '/templates' : '/', true)
   }
 
   async function deleteShop() {
@@ -72,18 +74,16 @@
   </section>
   {#if owner}
     <section>
-      <h3>List</h3>
+      <h3>{list.kind === 'template' ? 'Template' : 'List'}</h3>
       <form class="row" onsubmit={(e) => (e.preventDefault(), renameList())}>
         <input bind:value={listName} aria-label="List name" maxlength="200" onblur={renameList} />
       </form>
+      {#if siblings.length > 1 && !list.archived_at}
+        <div class="order"><span class="muted small">Order in {shop?.name}</span><UpDown what="{list.kind} {list.name}" index={siblings.findIndex((l) => l.id === list.id)} count={siblings.length} onmove={(to) => shopping.moveList(list, to)} /></div>
+      {/if}
       <div class="actions">
-        {#if list.is_default}
-          <span class="muted small"><Icon name="star" size={14} /> The default list of {shop?.name}: new items from elsewhere land here.</span>
-        {:else}
-          {#if !list.archived_at}<button class="btn small" onclick={() => shopping.patchList(list, { is_default: true })}>Make default</button>{/if}
-          <button class="btn small" onclick={() => shopping.patchList(list, { archived: !list.archived_at })}>{list.archived_at ? 'Unarchive' : 'Archive'}</button>
-          <button class="btn small danger" onclick={deleteList}>Delete list</button>
-        {/if}
+        {#if list.kind === 'list'}<button class="btn small" onclick={() => shopping.patchList(list, { archived: !list.archived_at })}>{list.archived_at ? 'Unarchive' : 'Archive'}</button>{/if}
+        <button class="btn small danger" onclick={deleteList}>Delete {list.kind === 'template' ? 'template' : 'list'}</button>
       </div>
     </section>
   {/if}
@@ -93,8 +93,9 @@
       <h3>Categories</h3>
       <p class="muted small">Items without a category are under Other. Deleting a category moves its items there.</p>
       <ul>
-        {#each shopping.categoriesOf(list.id) as c (c.id)}
+        {#each shopping.categoriesOf(list.id) as c, i (c.id)}
           <li>
+            <UpDown what="category {c.name}" index={i} count={shopping.categoriesOf(list.id).length} onmove={(to) => shopping.moveCategory(c, to)} />
             <input
               value={c.name}
               aria-label="Category name"
@@ -128,6 +129,9 @@
           onchange={(e) => shopping.patchShop(shop, { color: e.currentTarget.value })}
         />
       </form>
+      {#if shopping.sortedShops.length > 1}
+        <div class="order"><span class="muted small">Order of shops</span><UpDown what="shop {shop.name}" index={shopping.sortedShops.findIndex((s) => s.id === shop.id)} count={shopping.sortedShops.length} onmove={(to) => shopping.moveShop(shop, to)} /></div>
+      {/if}
       <div class="actions">
         {#if shop.color}<button class="btn small" onclick={() => shopping.patchShop(shop, { color: null })}>No colour</button>{/if}
         <span class="spacer"></span>
@@ -173,6 +177,11 @@
     display: flex;
     gap: 6px;
     align-items: center;
+  }
+  .order {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
   .color {
     width: 52px;

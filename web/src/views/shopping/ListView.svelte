@@ -87,8 +87,13 @@
 
 {#if !sections.some((s) => s.items.length) && !cart.length}
   <div class="card empty">
-    <p><strong>Nothing to buy yet.</strong></p>
-    <p class="muted">Type above to add things. What you add is remembered and suggested next time.</p>
+    {#if list.kind === 'template'}
+      <p><strong>An empty template.</strong></p>
+      <p class="muted">Add the things you usually buy here; new lists can start with them.</p>
+    {:else}
+      <p><strong>Nothing to buy yet.</strong></p>
+      <p class="muted">Type above to add things. What you add is remembered and suggested next time.</p>
+    {/if}
   </div>
 {/if}
 
@@ -102,7 +107,7 @@
   >
     <h2>
       {#if movable && !readonly && !picking}
-        <span class="grip" data-handle tabindex="0" role="button" aria-label="Move category {s.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
+        <span class="grip" data-handle tabindex="0" role="button" aria-describedby="dnd-help" aria-label="Move category {s.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
       {/if}
       <button class="cat" aria-expanded={!isCollapsed} onclick={() => collapsed.toggle(s.id)}>
         <span class="chev" class:collapsed={isCollapsed}><Icon name="chevronDown" size={18} /></span>
@@ -113,7 +118,7 @@
     {#if !isCollapsed}
       <ul class:empty-drop={!s.items.length} use:dropList={itemDrop(s.id === 'other' ? null : s.id)}>
         {#each s.items as item (item.id)}
-          <ItemRow {item} {readonly} onedit={edit} onpicture={showPicture} selected={picking ? picked.includes(item.id) : undefined} onselect={pick} />
+          <ItemRow {item} {readonly} tickable={list.kind === 'list'} onedit={edit} onpicture={showPicture} selected={picking ? picked.includes(item.id) : undefined} onselect={pick} />
         {/each}
       </ul>
     {/if}
@@ -132,11 +137,8 @@
 {#if other}{@render section(other, false)}{/if}
 
 {#if cart.length}
-  <section class="card cart">
-    <div class="cart-head">
-      <h2>In the cart <span class="badge">{cart.length}</span></h2>
-      {#if !readonly}<button class="btn primary small" onclick={() => shopping.finish(list.id)}><Icon name="check" size={16} /> Finish shopping</button>{/if}
-    </div>
+  <!-- Got it: at the end, greyed out and struck through, until Done (in the header). -->
+  <section class="card got" aria-label="Got">
     <ul>
       {#each cart as item (item.id)}<ItemRow {item} {readonly} onedit={edit} onpicture={showPicture} />{/each}
     </ul>
@@ -207,17 +209,7 @@
   .chev.collapsed {
     transform: rotate(-90deg);
   }
-  .cart {
+  .got {
     background: var(--surface-2);
-  }
-  .cart-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 8px 8px 12px;
-  }
-  .cart-head h2 {
-    gap: 8px;
   }
 </style>

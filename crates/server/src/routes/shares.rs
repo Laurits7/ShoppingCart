@@ -169,6 +169,9 @@ async fn share(
     check_role(&n.role)?;
     let mut tx = state.db.write.begin().await?;
     require(&mut tx, user, kind, list_id, Need::Manage).await?;
+    if kind == Kind::List {
+        super::shops::not_inbox(&mut tx, list_id).await?;
+    }
     match n.principal_type.as_str() {
         "user" => {
             if n.principal_id == user.id() {

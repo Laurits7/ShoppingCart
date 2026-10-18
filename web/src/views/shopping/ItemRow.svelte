@@ -13,6 +13,8 @@
     selected,
     onselect,
     onpicture,
+    onassign,
+    tickable = true,
   }: {
     item: Item
     readonly?: boolean
@@ -22,6 +24,10 @@
     onselect?: (item: Item) => void
     /** Show the item's picture large. */
     onpicture?: (item: Item) => void
+    /** Inbox: move it to a list. */
+    onassign?: (item: Item) => void
+    /** Templates and the inbox aren't ticked off; tapping the row edits it instead. */
+    tickable?: boolean
   } = $props()
   const look = $derived(shopping.look(item))
   const checked = $derived(!!item.checked_at)
@@ -38,7 +44,7 @@
   use:draggable={{ item: () => ({ kind: 'item', id: item.id, listId: item.list_id }), disabled: !canDrag }}
 >
   {#if canDrag}
-    <span class="grip" data-handle tabindex="0" role="button" aria-label="Move {item.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
+    <span class="grip" data-handle tabindex="0" role="button" aria-describedby="dnd-help" aria-label="Move {item.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
   {/if}
   {#if selecting}
     <button class="main" aria-pressed={selected} onclick={() => onselect?.(item)}>
@@ -47,8 +53,18 @@
     </button>
     <span class="amount static">{amount}</span>
   {:else}
-    <button class="main" class:pad={!canDrag} aria-pressed={checked} disabled={readonly} onclick={() => shopping.tick(item, !checked)}>
-      <span class="box"><Icon name={checked ? 'checkCircle' : 'circle'} size={24} /></span>
+    <button
+      class="main"
+      class:pad={!canDrag}
+      aria-pressed={tickable ? checked : undefined}
+      disabled={readonly}
+      onclick={() => (tickable ? shopping.tick(item, !checked) : onedit(item))}
+    >
+      {#if tickable}
+        <span class="box"><Icon name={checked ? 'checkCircle' : 'circle'} size={24} /></span>
+      {:else}
+        <span class="bullet" aria-hidden="true"></span>
+      {/if}
       <span class="text">
         <span class="name">{item.name}</span>
         {#if look.brand}<span class="brand" class:pinned={!!item.product_id}>{look.brand}</span>{/if}
@@ -59,13 +75,16 @@
       <button class="thumb" data-nodrag aria-label="Picture of {item.name}" onclick={() => onpicture?.(item)}><Thumb id={look.image} size={40} /></button>
     {/if}
     {#if checked || readonly}
-      <span class="amount static" aria-label="Amount">{amount}</span>
+      <span class="amount static"><span class="sr-only">Amount </span>{amount}</span>
     {:else}
       <span class="stepper" data-nodrag>
         <button class="icon-btn" aria-label="Less {item.name}" onclick={() => shopping.step(item, false)}><Icon name="minus" size={18} /></button>
         <button class="amount" aria-label="Amount of {item.name}: {amount}. Change" onclick={() => onedit(item, 'amount')}>{amount}</button>
         <button class="icon-btn" aria-label="More {item.name}" onclick={() => shopping.step(item, true)}><Icon name="plus" size={18} /></button>
       </span>
+    {/if}
+    {#if onassign && !readonly}
+      <button class="btn small assign" data-nodrag aria-label="Assign {item.name} to a list" onclick={() => onassign(item)}><Icon name="move" size={16} /> List</button>
     {/if}
     {#if !readonly}
       <button class="icon-btn" data-nodrag aria-label="Edit {item.name}" onclick={() => onedit(item)}><Icon name="more" /></button>
@@ -82,6 +101,10 @@
     padding: 0 4px 0 0;
     border-top: 1px solid var(--border);
     background: var(--surface);
+  }
+  .assign {
+    flex: none;
+    margin-left: 4px;
   }
   li.checked {
     background: transparent;
@@ -112,6 +135,14 @@
   .checked .box,
   .box.on {
     color: var(--accent);
+  }
+  .bullet {
+    width: 8px;
+    height: 8px;
+    margin: 0 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex: none;
   }
   .text {
     min-width: 0;

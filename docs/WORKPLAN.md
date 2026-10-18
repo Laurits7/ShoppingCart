@@ -3,8 +3,8 @@
 > Companion to [`SPEC.md`](SPEC.md). Section numbers like §6.8 refer to the spec.
 > Status (2026-10-18): Phase 0 (spec, plan, docs skeleton) done. Part A and all Part C defaults
 > confirmed (D-12..D-21). **Phase 1 done** (D-22..D-26). **Phase 2 chunks done** (D-27..D-34); gate needs the owner's
-> manual check. **Phase 3 chunks done** (D-35..D-38). **Phase 3b chunks done** (D-39..D-43). **Phase 4 chunks done** (D-44..D-49). **Phase 5 chunks done** (D-50..D-53). **Phase 6 chunks 6.1–6.4 done** (D-54..D-59). **Next: Phase 7 (PWA, polish, release);**
-> 6.5 is for a Streamline session.
+> manual check. **Phase 3 chunks done** (D-35..D-38). **Phase 3b chunks done** (D-39..D-43). **Phase 4 chunks done** (D-44..D-49). **Phase 5 chunks done** (D-50..D-53). **Phase 6 chunks 6.1–6.4 done** (D-54..D-59). **Phase 7 chunks 7.1–7.3 and 7.5 done, 7.4 prepared** (D-60..D-67): tagging v1.0.0 is the owner's
+> call. 6.5 is for a Streamline session.
 > Legend: `[x]` done · `[~]` partly done (remaining work noted) · `[ ]` not started.
 
 ## How to use this plan
@@ -167,11 +167,15 @@ SQL) → SQLite (WAL, one writer pool of 1, reader pool) → event log row → S
       done; docker measurements and the owner's check with their own Mealie still to do.
 
 ### Phase 7. PWA, polish, release
-- [ ] **7.1 PWA**: manifest/icons, service worker over HTTPS, install prompt.
-- [ ] **7.2 Backups and export** (§6.14).
-- [ ] **7.3 Accessibility and performance pass**; `scripts/measure.sh` results in docs.
-- [ ] **7.4 Release**: version, changelog, multi-arch image to GHCR, compose file in releases,
-      Pages docs live; v1.0.0.
+- [x] **7.1 PWA**: manifest/icons, service worker over HTTPS, install prompt.
+- [x] **7.2 Backups and export** (§6.14).
+- [x] **7.3 Accessibility and performance pass**; `scripts/measure.sh` results in docs.
+- [~] **7.4 Release**: version, changelog, multi-arch image to GHCR, compose file in releases,
+      Pages docs live; v1.0.0. Everything prepared (version 1.0.0, CHANGELOG, release workflow,
+      arm64 cross-build verified locally); the tag and the Pages setting are the owner's.
+- [x] **7.5 Templates, inbox and Done** (owner request, D-65..D-67): staples and default lists
+      become templates (Templates tab, new list from a template, add from a template) and a
+      per-user inbox; ticked items greyed out at the end of a list; **Done** finishes shopping.
 
 ---
 

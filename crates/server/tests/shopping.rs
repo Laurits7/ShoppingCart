@@ -1,4 +1,4 @@
-//! Shops, lists, categories, items, staples and the item catalogue (Phase 2).
+//! Shops, lists, templates, the inbox, categories, items and the item catalogue.
 
 mod common;
 
@@ -19,10 +19,7 @@ async fn with_shop(t: &T) -> (String, String, String) {
         .await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.json);
     let shop = r.json["shop"]["id"].as_str().unwrap().to_string();
-    let list = r.json["shop"]["default_list_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let list = r.json["lists"][0]["id"].as_str().unwrap().to_string();
     (s, shop, list)
 }
 
@@ -63,7 +60,7 @@ fn ulid() -> String {
 }
 
 #[tokio::test]
-async fn shops_and_default_lists() {
+async fn shops_and_lists() {
     let t = setup().await;
     let s = t.admin().await;
     let (shop_id, list_id) = (ulid(), ulid());
@@ -74,9 +71,9 @@ async fn shops_and_default_lists() {
     assert_eq!(r.status, StatusCode::OK, "{}", r.json);
     assert_eq!(r.json["shop"]["name"], "Rimi");
     assert_eq!(r.json["shop"]["color"], "#aa0000");
-    assert_eq!(r.json["shop"]["default_list_id"], list_id.as_str());
+    assert_eq!(r.json["lists"][0]["id"], list_id.as_str());
     assert_eq!(r.json["lists"][0]["name"], "Shopping list");
-    assert_eq!(r.json["lists"][0]["is_default"], true);
+    assert_eq!(r.json["lists"][0]["kind"], "list");
     assert_eq!(r.json["lists"][0]["role"], "owner");
     // The first list gets starter categories.
     let starters = r.json["categories"].as_array().unwrap().len();
@@ -86,7 +83,7 @@ async fn shops_and_default_lists() {
     assert_eq!(again.status, StatusCode::OK);
     assert_eq!(again.json["lists"].as_array().unwrap().len(), 1);
 
-    // A new list copies the default list's categories, as they are now.
+    // A new (empty) list copies the categories of the shop's latest list, as they are now.
     let dairy = category_id(&r.json["categories"], "Dairy and eggs");
     let ren = t
         .req(
@@ -106,47 +103,12 @@ async fn shops_and_default_lists() {
         )
         .await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.json);
-    assert_eq!(r.json["list"]["is_default"], false);
     let party = r.json["list"]["id"].as_str().unwrap().to_string();
     let cats = r.json["categories"].as_array().unwrap();
     assert_eq!(cats.len(), starters);
     assert!(cats.iter().any(|c| c["name"] == "Dairy"));
 
-    // The default list can't be deleted or archived.
-    let r = t
-        .req(
-            "DELETE",
-            &format!("/api/v1/lists/{list_id}"),
-            Some(&s),
-            None,
-        )
-        .await;
-    assert_eq!(r.status, StatusCode::CONFLICT);
-    let r = t
-        .req(
-            "PATCH",
-            &format!("/api/v1/lists/{list_id}"),
-            Some(&s),
-            Some(json!({"archived": true})),
-        )
-        .await;
-    assert_eq!(r.status, StatusCode::BAD_REQUEST);
-
-    // Make the other list the default; then the first can go.
-    let r = t
-        .req(
-            "PATCH",
-            &format!("/api/v1/lists/{party}"),
-            Some(&s),
-            Some(json!({"is_default": true})),
-        )
-        .await;
-    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
-    assert_eq!(r.json["is_default"], true);
-    let r = t
-        .req("GET", &format!("/api/v1/lists/{list_id}"), Some(&s), None)
-        .await;
-    assert_eq!(r.json["is_default"], false);
+    // Any list can be archived and deleted.
     let r = t
         .req(
             "PATCH",
@@ -285,7 +247,7 @@ async fn quick_add_and_duplicate_guard() {
         assert_eq!(r.status, StatusCode::BAD_REQUEST);
     }
 
-    // POST /shops/{id}/items adds to the default list; with a token the source is "api".
+    // Items without a list (API, Mealie) go to the inbox; with a token the source is "api".
     let tok = t
         .req(
             "POST",
@@ -301,14 +263,74 @@ async fn quick_add_and_duplicate_guard() {
     let r = t
         .req(
             "POST",
-            &format!("/api/v1/shops/{shop}/items"),
+            "/api/v1/inbox/items",
             Some(&tok),
             Some(json!({"text": "coffee"})),
         )
         .await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.json);
-    assert_eq!(r.json["item"]["list_id"], list.as_str());
     assert_eq!(r.json["item"]["source"], "api");
+    let inbox = r.json["item"]["list_id"].as_str().unwrap().to_string();
+    assert_ne!(inbox, list);
+    let r = t
+        .req(
+            "POST",
+            "/api/v1/inbox/items",
+            Some(&s),
+            Some(json!({"text": "tea"})),
+        )
+        .await;
+    assert_eq!(r.json["item"]["list_id"], inbox.as_str(), "one inbox");
+    let tea = r.json["item"]["id"].as_str().unwrap().to_string();
+    let lists = t.req("GET", "/api/v1/lists", Some(&s), None).await.json;
+    let ib = lists
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["id"] == inbox.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(
+        (
+            ib["kind"].as_str(),
+            ib["shop_id"].is_null(),
+            ib["open_count"].as_i64()
+        ),
+        (Some("inbox"), true, Some(2))
+    );
+    // Assigning an inbox item to a list moves it there.
+    let r = t
+        .req(
+            "POST",
+            "/api/v1/items/move",
+            Some(&s),
+            Some(json!({"ids": [tea], "list_id": list})),
+        )
+        .await;
+    assert_eq!(r.json[0]["list_id"], list.as_str());
+    // The inbox itself stays as it is.
+    for (m, path, body) in [
+        (
+            "PATCH",
+            format!("/api/v1/lists/{inbox}"),
+            Some(json!({"name": "x"})),
+        ),
+        ("DELETE", format!("/api/v1/lists/{inbox}"), None),
+        (
+            "POST",
+            format!("/api/v1/lists/{inbox}/move"),
+            Some(json!({})),
+        ),
+        (
+            "POST",
+            format!("/api/v1/lists/{inbox}/shares"),
+            Some(json!({"principal_type": "user", "principal_id": "x", "role": "viewer"})),
+        ),
+    ] {
+        let r = t.req(m, &path, Some(&s), body).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{m} {path}");
+    }
+    let _ = shop;
 }
 
 #[tokio::test]
@@ -562,117 +584,156 @@ async fn ticking_stepping_finishing_and_undo() {
 }
 
 #[tokio::test]
-async fn staples() {
+async fn templates() {
     let t = setup().await;
     let (s, shop, list) = with_shop(&t).await;
-    let mk = |body: Value| {
-        let t = &t;
-        let s = s.clone();
-        let shop = shop.clone();
-        async move {
-            let r = t
-                .req(
-                    "POST",
-                    &format!("/api/v1/shops/{shop}/staples"),
-                    Some(&s),
-                    Some(body),
-                )
-                .await;
-            assert_eq!(r.status, StatusCode::OK, "{}", r.json);
-            r.json["id"].as_str().unwrap().to_string()
-        }
-    };
-    let milk = mk(json!({"name": "Milk", "amount": 2, "category_name": "dairy and eggs"})).await;
-    let coffee = mk(json!({"name": "Coffee", "unit": "pack"})).await;
+    // A template is made like a list (categories from the shop's latest list) and edited like
+    // one.
     let r = t
-        .req(
-            "GET",
-            &format!("/api/v1/shops/{shop}/staples"),
-            Some(&s),
-            None,
-        )
-        .await;
-    assert_eq!(r.json.as_array().unwrap().len(), 2);
-    assert_eq!(r.json[0]["name"], "Milk");
-
-    // One milk is already open: the staple adds to it.
-    add(&t, &s, &list, json!({"text": "milk"})).await;
-    let r = t
-        .req(
-            "POST",
-            &format!("/api/v1/lists/{list}/staples"),
-            Some(&s),
-            Some(json!({"staples": [{"staple_id": milk}, {"staple_id": coffee}]})),
-        )
-        .await;
-    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
-    assert_eq!(r.json[0]["merged_from"], 1.0);
-    assert_eq!(r.json[0]["item"]["amount"], 3.0);
-    assert_eq!(r.json[1]["item"]["source"], "staple");
-    assert_eq!(r.json[1]["item"]["unit"], "pack");
-    // The open milk had no category, so the merged one has none either; on a fresh list
-    // the staple's category is matched by name.
-    let r = t
-        .req(
-            "POST",
-            &format!("/api/v1/lists/{list}/staples"),
-            Some(&s),
-            Some(json!({"staples": [{"staple_id": milk}]})),
-        )
-        .await;
-    assert_eq!(r.json[0]["item"]["category_id"].as_str(), None);
-    let fresh = t
         .req(
             "POST",
             "/api/v1/lists",
             Some(&s),
-            Some(json!({"shop_id": shop, "name": "Next"})),
+            Some(json!({"shop_id": shop, "name": "Weekly", "kind": "template"})),
         )
-        .await
-        .json;
-    let next = fresh["list"]["id"].as_str().unwrap();
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    assert_eq!(r.json["list"]["kind"], "template");
+    let weekly = r.json["list"]["id"].as_str().unwrap().to_string();
+    let dairy = category_id(&r.json["categories"], "Dairy and eggs");
+    add(
+        &t,
+        &s,
+        &weekly,
+        json!({"name": "Milk", "amount": 2, "category_id": dairy}),
+    )
+    .await;
+    add(&t, &s, &weekly, json!({"text": "coffee 1 pack"})).await;
     let r = t
         .req(
             "POST",
-            &format!("/api/v1/lists/{next}/staples"),
+            "/api/v1/lists",
             Some(&s),
-            Some(json!({"staples": [{"staple_id": milk}]})),
+            Some(json!({"shop_id": shop, "name": "x", "kind": "inbox"})),
         )
         .await;
-    assert_eq!(
-        r.json[0]["item"]["category_id"].as_str().unwrap(),
-        category_id(&fresh["categories"], "Dairy and eggs")
-    );
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
 
-    // Edit and delete.
+    // New → From template: its categories and items, nothing ticked.
     let r = t
         .req(
-            "PATCH",
-            &format!("/api/v1/staples/{coffee}"),
+            "POST",
+            "/api/v1/lists",
             Some(&s),
-            Some(json!({"amount": 2, "unit": null})),
+            Some(json!({"shop_id": shop, "name": "This week", "template_id": weekly})),
         )
         .await;
-    assert_eq!(r.json["amount"], 2.0);
-    assert!(r.json["unit"].is_null());
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    assert_eq!(r.json["list"]["kind"], "list");
+    assert_eq!(r.json["list"]["open_count"], 2);
+    let week = r.json["list"]["id"].as_str().unwrap().to_string();
+    let copied = items(&t, &s, &week).await;
+    let milk = copied.iter().find(|i| i["name"] == "Milk").unwrap();
+    assert_eq!(milk["amount"], 2.0);
+    assert_eq!(
+        milk["category_id"],
+        category_id(&r.json["categories"], "Dairy and eggs").as_str()
+    );
+    assert!(copied.iter().all(|i| i["checked_at"].is_null()));
+    // Only templates can be started from.
     let r = t
         .req(
-            "DELETE",
-            &format!("/api/v1/staples/{coffee}"),
+            "POST",
+            "/api/v1/lists",
             Some(&s),
-            None,
+            Some(json!({"shop_id": shop, "name": "y", "template_id": list})),
         )
         .await;
-    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+
+    // Add from template into an existing list: some, or all; open ones get the amount added.
+    add(&t, &s, &list, json!({"text": "milk"})).await;
+    let tmpl = items(&t, &s, &weekly).await;
+    let coffee_id = tmpl.iter().find(|i| i["name"] == "coffee").unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let r = t
         .req(
-            "GET",
-            &format!("/api/v1/shops/{shop}/staples"),
+            "POST",
+            &format!("/api/v1/lists/{list}/from-template"),
             Some(&s),
-            None,
+            Some(json!({"template_id": weekly, "items": [{"item_id": coffee_id}]})),
         )
         .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
     assert_eq!(r.json.as_array().unwrap().len(), 1);
+    assert_eq!(r.json[0]["item"]["unit"], "pack");
+    let r = t
+        .req(
+            "POST",
+            &format!("/api/v1/lists/{list}/from-template"),
+            Some(&s),
+            Some(json!({"template_id": weekly})),
+        )
+        .await;
+    let milk = r
+        .json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["item"]["name"] == "milk")
+        .unwrap()
+        .clone();
+    // "milk" was added with the catalogue's usual amount (2, from the template): 2 + 2.
+    assert_eq!(
+        (
+            milk["merged_from"].as_f64(),
+            milk["item"]["amount"].as_f64()
+        ),
+        (Some(2.0), Some(4.0))
+    );
+    // The template itself is unchanged.
+    assert_eq!(items(&t, &s, &weekly).await.len(), 2);
+
+    // Done: the ticked items go, what wasn't bought stays.
+    let on = items(&t, &s, &week).await;
+    let id = on[0]["id"].as_str().unwrap();
+    t.req(
+        "PATCH",
+        &format!("/api/v1/items/{id}"),
+        Some(&s),
+        Some(json!({"checked": true})),
+    )
+    .await;
+    let r = t
+        .req(
+            "POST",
+            &format!("/api/v1/lists/{week}/finish"),
+            Some(&s),
+            None,
+        )
+        .await;
+    assert_eq!(r.json["removed"], json!([id]));
+    assert_eq!(items(&t, &s, &week).await.len(), 1);
+
+    // The summary is about shopping lists, not templates or the inbox.
+    t.req(
+        "POST",
+        "/api/v1/inbox/items",
+        Some(&s),
+        Some(json!({"text": "x"})),
+    )
+    .await;
+    let r = t.req("GET", "/api/v1/summary", Some(&s), None).await;
+    assert!(
+        r.json
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|l| l["list_id"] != weekly.as_str())
+    );
+    assert_eq!(r.json.as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -832,8 +893,8 @@ async fn catalog() {
     );
 }
 
-/// Nobody but the owner sees or touches a shop, list, category, item, staple or catalogue
-/// entry: every path answers 404 (SPEC §7.3).
+/// Nobody but the owner sees or touches a shop, list, template, inbox, category, item or
+/// catalogue entry: every path answers 404 (SPEC §7.3).
 #[tokio::test]
 async fn others_see_nothing() {
     let t = setup().await;
@@ -853,32 +914,52 @@ async fn others_see_nothing() {
         .await
         .json;
     let cat = cats[0]["id"].as_str().unwrap().to_string();
-    let staple = t
+    let template = t
         .req(
             "POST",
-            &format!("/api/v1/shops/{shop}/staples"),
+            "/api/v1/lists",
             Some(&s),
-            Some(json!({"name": "Bread"})),
+            Some(json!({"shop_id": shop, "name": "Weekly", "kind": "template"})),
         )
         .await
-        .json["id"]
+        .json["list"]["id"]
         .as_str()
         .unwrap()
         .to_string();
+    add(&t, &s, &template, json!({"name": "Rye loaf"})).await;
+    t.req(
+        "POST",
+        "/api/v1/inbox/items",
+        Some(&s),
+        Some(json!({"name": "from Mealie"})),
+    )
+    .await;
+    let eves_shop = t
+        .req(
+            "POST",
+            "/api/v1/shops",
+            Some(&eve),
+            Some(json!({"name": "Mine"})),
+        )
+        .await
+        .json;
+    let eves_list = eves_shop["lists"][0]["id"].as_str().unwrap().to_string();
+    let eves_shop = eves_shop["shop"]["id"].as_str().unwrap().to_string();
     let entry = t.req("GET", "/api/v1/catalog", Some(&s), None).await.json[0]["id"]
         .as_str()
         .unwrap()
         .to_string();
 
     let r = t.req("GET", "/api/v1/shopping", Some(&eve), None).await;
-    for k in [
-        "shops",
-        "lists",
-        "categories",
-        "items",
-        "staples",
-        "catalog",
-    ] {
+    assert_eq!(
+        r.json["lists"].as_array().unwrap().len(),
+        1,
+        "only her own list"
+    );
+    assert!(
+        !r.json.to_string().contains("Rye loaf") && !r.json.to_string().contains("from Mealie")
+    );
+    for k in ["items", "catalog"] {
         assert_eq!(r.json[k], json!([]), "{k}");
     }
     let r = t.req("GET", "/api/v1/catalog?q=mi", Some(&eve), None).await;
@@ -891,23 +972,23 @@ async fn others_see_nothing() {
             Some(json!({"name": "x"})),
         ),
         ("DELETE", format!("/api/v1/shops/{shop}"), None),
+        ("GET", format!("/api/v1/lists/{template}/items"), None),
         (
             "POST",
-            format!("/api/v1/shops/{shop}/items"),
+            format!("/api/v1/lists/{template}/items"),
             Some(json!({"name": "x"})),
         ),
-        ("GET", format!("/api/v1/shops/{shop}/staples"), None),
+        // Ann's template can't be used for Eve's lists either.
         (
             "POST",
-            format!("/api/v1/shops/{shop}/staples"),
-            Some(json!({"name": "x"})),
+            "/api/v1/lists".into(),
+            Some(json!({"shop_id": eves_shop, "name": "x", "template_id": template})),
         ),
         (
-            "PATCH",
-            format!("/api/v1/staples/{staple}"),
-            Some(json!({"name": "x"})),
+            "POST",
+            format!("/api/v1/lists/{eves_list}/from-template"),
+            Some(json!({"template_id": template})),
         ),
-        ("DELETE", format!("/api/v1/staples/{staple}"), None),
         (
             "POST",
             "/api/v1/lists".into(),
@@ -935,8 +1016,8 @@ async fn others_see_nothing() {
         ("POST", format!("/api/v1/lists/{list}/finish"), None),
         (
             "POST",
-            format!("/api/v1/lists/{list}/staples"),
-            Some(json!({"staples": [{"staple_id": staple}]})),
+            format!("/api/v1/lists/{list}/from-template"),
+            Some(json!({"template_id": template})),
         ),
         (
             "PATCH",
@@ -1007,7 +1088,11 @@ async fn others_see_nothing() {
     // The owner's things are untouched.
     let r = t.req("GET", "/api/v1/shopping", Some(&s), None).await;
     assert_eq!(r.json["shops"][0]["name"], "Rimi");
-    assert_eq!(r.json["staples"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        r.json["lists"].as_array().unwrap().len(),
+        3,
+        "list, template and inbox"
+    );
 }
 
 #[tokio::test]
@@ -1148,10 +1233,7 @@ async fn moving_things() {
         )
         .await
         .json;
-    let p_list = pharmacy["shop"]["default_list_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let p_list = pharmacy["lists"][0]["id"].as_str().unwrap().to_string();
     let r = t
         .req(
             "POST",
@@ -1224,37 +1306,4 @@ async fn moving_things() {
     .await;
     let shops = t.req("GET", "/api/v1/shops", Some(&s), None).await.json;
     assert_eq!(shops[0]["id"], p_shop);
-
-    let mut staples = vec![];
-    for n in ["x", "y"] {
-        staples.push(
-            t.req(
-                "POST",
-                &format!("/api/v1/shops/{shop}/staples"),
-                Some(&s),
-                Some(json!({"name": n})),
-            )
-            .await
-            .json["id"]
-                .as_str()
-                .unwrap()
-                .to_string(),
-        );
-    }
-    t.req(
-        "POST",
-        &format!("/api/v1/staples/{}/move", staples[1]),
-        Some(&s),
-        Some(json!({"before": staples[0]})),
-    )
-    .await;
-    let r = t
-        .req(
-            "GET",
-            &format!("/api/v1/shops/{shop}/staples"),
-            Some(&s),
-            None,
-        )
-        .await;
-    assert_eq!(r.json[0]["name"], "y");
 }

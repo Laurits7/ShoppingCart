@@ -25,7 +25,7 @@ invited directly). Removing a share, or removing someone from the household, tak
 immediately, also on phones that have the list open.
 
 Lists shared with you show up under **Shared with me** on the Shopping page, with the owner's
-shop and name. What you add there goes into *your* item catalogue. The owner's shop and staples
+shop and name. What you add there goes into *your* item catalogue. The owner's shop and templates
 stay theirs. In the list's **⋯** menu → **Who can see it…** you can leave a list that was shared
 with you personally; for a list shared with a household, leave the household instead.
 

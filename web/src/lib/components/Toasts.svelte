@@ -1,11 +1,21 @@
 <script lang="ts">
-  import { dismiss, toasts } from '../toast.svelte'
+  import { dismiss, pause, resume, toasts } from '../toast.svelte'
+  import Icon from './Icon.svelte'
 </script>
 
-<div class="toasts" role="status" aria-live="polite">
+<!-- Moved into an open sheet while one is open (lib/toplayer.ts). -->
+<div id="toasts" class="toasts" role="status" aria-live="polite">
   {#each toasts as t (t.id)}
-    <div class="toast" class:error={t.kind === 'error'}>
-      <span>{t.text}</span>
+    <div
+      class="toast"
+      class:error={t.kind === 'error'}
+      role="group"
+      onmouseenter={() => pause(t.id)}
+      onmouseleave={() => resume(t.id)}
+      onfocusin={() => pause(t.id)}
+      onfocusout={() => resume(t.id)}
+    >
+      <span class="text">{t.text}</span>
       {#if t.action}
         <button
           class="action"
@@ -14,6 +24,7 @@
             dismiss(t.id)
           }}>{t.action.label}</button>
       {/if}
+      <button class="close" aria-label="Dismiss" onclick={() => dismiss(t.id)}><Icon name="x" size={16} /></button>
     </div>
   {/each}
 </div>
@@ -40,8 +51,7 @@
     pointer-events: auto;
     display: flex;
     align-items: center;
-    gap: 12px;
-    justify-content: space-between;
+    gap: 8px;
     background: var(--text);
     color: var(--bg);
     padding: 12px 16px;
@@ -52,7 +62,19 @@
   }
   .toast.error {
     background: var(--danger);
-    color: #fff;
+    color: var(--surface);
+  }
+  .text {
+    flex: 1;
+  }
+  .close {
+    display: grid;
+    place-items: center;
+    min-width: 32px;
+    min-height: 32px;
+    margin: -6px -8px -6px 0;
+    color: inherit;
+    opacity: 0.8;
   }
   .action {
     font-weight: 700;

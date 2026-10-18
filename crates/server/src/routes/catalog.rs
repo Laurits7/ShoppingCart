@@ -405,7 +405,7 @@ pub async fn patch(
     Ok(Json(item))
 }
 
-/// Forget catalogue entries and their products; items and staples using them stay,
+/// Forget catalogue entries and their products; items using them stay,
 /// unlinked.
 async fn tombstone(conn: &mut SqliteConnection, ids: &[String]) -> sqlx::Result<()> {
     for id in ids {
@@ -426,7 +426,7 @@ async fn tombstone(conn: &mut SqliteConnection, ids: &[String]) -> sqlx::Result<
         .bind(id)
         .execute(&mut *conn)
         .await?;
-        for table in ["items", "staples"] {
+        for table in ["items"] {
             sqlx::query(&format!(
                 "UPDATE {table} SET catalog_item_id = NULL, updated_at = ?1, rev = ?2 WHERE catalog_item_id = ?3"
             ))
@@ -537,7 +537,7 @@ pub async fn merge(
         .bind(f)
         .execute(&mut *tx)
         .await?;
-        for table in ["items", "staples"] {
+        for table in ["items"] {
             sqlx::query(&format!(
                 "UPDATE {table} SET catalog_item_id = ?1, updated_at = ?2, rev = ?3 WHERE catalog_item_id = ?4"
             ))

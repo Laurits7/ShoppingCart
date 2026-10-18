@@ -1,6 +1,7 @@
 //! ShoppingCart server: HTTP API, auth and the embedded web app, in one binary.
 
 pub mod auth;
+pub mod backup;
 pub mod config;
 pub mod db;
 pub mod error;
@@ -94,7 +95,8 @@ pub async fn run() -> anyhow::Result<()> {
     let addr = SocketAddr::new(config.bind, config.port);
     let (app, state) = build(config).await?;
     spawn_cleanup(state.clone());
-    integrations::spawn_job(state);
+    integrations::spawn_job(state.clone());
+    backup::spawn_job(state);
     let listener = TcpListener::bind(addr).await?;
     tracing::info!("ShoppingCart listening on http://{addr}");
     axum::serve(

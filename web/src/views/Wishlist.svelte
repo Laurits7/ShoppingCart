@@ -26,6 +26,7 @@
   let newOwn = $state('')
   let giftFor = $state<string | null>(null)
   let giftTitle = $state('')
+  let giftPick = $state('')
   let personOpen = $state(false)
   let personName = $state('')
   let personUser = $state('')
@@ -75,23 +76,17 @@
 </script>
 
 {#snippet card(w: Wishlist, movable: boolean)}
-  <a
-    class="card wl"
-    href="/wishlist/{w.id}"
-    data-id={movable ? w.id : undefined}
-    data-label={w.title}
-    use:draggable={{ item: () => ({ kind: 'wishlist', id: w.id }), disabled: !movable, handleOnly: true }}
-  >
-    {#if movable}<span class="grip" data-handle tabindex="0" role="button" aria-label="Move {w.title}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>{/if}
-    <span class="text">
+  <div class="card wl" data-id={movable ? w.id : undefined} data-label={w.title} use:draggable={{ item: () => ({ kind: 'wishlist', id: w.id }), disabled: !movable, handleOnly: true }}>
+    {#if movable}<span class="grip" data-handle tabindex="0" role="button" aria-describedby="dnd-help" aria-label="Move {w.title}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>{/if}
+    <a class="text" href="/wishlist/{w.id}">
       <strong>{w.title}</strong>
       <span class="muted small">
         {w.owner_id !== session.me?.id ? `${w.owner_name} · ` : ''}{openCount(w)} wish{openCount(w) === 1 ? '' : 'es'}{#if takenCount(w)}
           · {takenCount(w)} taken{/if}{w.role === 'viewer' ? ' · view only' : ''}
       </span>
-    </span>
+    </a>
     <Icon name="chevronRight" size={18} />
-  </a>
+  </div>
 {/snippet}
 
 {#if error}
@@ -142,21 +137,26 @@
         <button class="btn" type="button" onclick={() => (giftFor = null)}>Cancel</button>
       </form>
     {:else}
-      <div class="row">
-        <select aria-label="New gift list for" onchange={(e) => {
-          const v = e.currentTarget.value
-          e.currentTarget.value = ''
-          if (v === '+') openPerson()
-          else if (v) {
-            giftFor = v
-            giftTitle = `Ideas for ${persons.find((p) => p.id === v)?.name ?? ''}`
+      <!-- A choice, then a button: changing the selection alone does nothing (WCAG 3.2.2). -->
+      <form
+        class="row"
+        onsubmit={(e) => {
+          e.preventDefault()
+          if (giftPick === '+') openPerson()
+          else if (giftPick) {
+            giftFor = giftPick
+            giftTitle = `Ideas for ${persons.find((p) => p.id === giftPick)?.name ?? ''}`
           }
-        }}>
+          giftPick = ''
+        }}
+      >
+        <select bind:value={giftPick} aria-label="New gift list for">
           <option value="">New gift list for…</option>
           {#each persons as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
           <option value="+">Someone new…</option>
         </select>
-      </div>
+        <button class="btn" type="submit" disabled={!giftPick}>Next</button>
+      </form>
     {/if}
   </section>
 {/if}
@@ -196,10 +196,9 @@
     align-items: center;
     gap: 8px;
     min-height: 56px;
-    padding: 8px 12px;
+    padding: 0 12px 0 4px;
     margin-bottom: 8px;
-    color: inherit;
-    text-decoration: none;
+    color: var(--muted);
   }
   .wl:hover {
     background: var(--surface-2);
@@ -207,9 +206,14 @@
   .text {
     flex: 1;
     min-width: 0;
+    min-height: 56px;
+    padding: 8px 0 8px 8px;
     display: flex;
     flex-direction: column;
+    justify-content: center;
     overflow-wrap: anywhere;
+    color: var(--text);
+    text-decoration: none;
   }
   .row {
     display: flex;

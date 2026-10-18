@@ -7,7 +7,9 @@
   --text: #1b1d1b;
   --muted: #5f655f;
   --border: #e1e4de;
-  --accent: #15803d;
+  /* Edges of fields must stand out (3:1, WCAG 1.4.11); --border is for dividers. */
+  --field-border: #898f88;
+  --accent: #14773a;
   --accent-soft: #e6f4ea;
   --accent-text: #ffffff;
   --danger: #c62828;
@@ -32,6 +34,7 @@
     --text: #e9ece8;
     --muted: #a2aaa1;
     --border: #2d322d;
+    --field-border: #6a7368;
     --accent: #4ade80;
     --accent-soft: #173322;
     --accent-text: #0b130d;
@@ -50,6 +53,7 @@
   --text: #e9ece8;
   --muted: #a2aaa1;
   --border: #2d322d;
+  --field-border: #6a7368;
   --accent: #4ade80;
   --accent-soft: #173322;
   --accent-text: #0b130d;
@@ -118,7 +122,7 @@ select {
   width: 100%;
   min-height: 42px;
   padding: 8px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-sm);
   background: var(--surface);
 }
@@ -196,7 +200,7 @@ textarea {
   width: 100%;
   min-height: 72px;
   padding: 8px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-sm);
   background: var(--surface);
   resize: vertical;
@@ -297,11 +301,6 @@ textarea:focus-visible {
   min-height: 44px;
   flex: none;
   color: var(--muted);
-  opacity: 0.6;
   cursor: grab;
   touch-action: none;
-}
-.grip:hover,
-.grip:focus-visible {
-  opacity: 1;
 }

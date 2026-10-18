@@ -109,10 +109,7 @@ async fn shop_with_milk(t: &T) -> (String, String) {
             Some(json!({"name": "Rimi"})),
         )
         .await;
-    let list = r.json["shop"]["default_list_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let list = r.json["lists"][0]["id"].as_str().unwrap().to_string();
     let r = t
         .req(
             "POST",

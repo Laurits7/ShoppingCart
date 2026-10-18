@@ -109,8 +109,9 @@ pub async fn visible_sections(
     since: i64,
 ) -> sqlx::Result<Vec<WishSection>> {
     sqlx::query_as(&format!(
-        "SELECT {SECTION_COLS} FROM wish_sections x JOIN wishlists w ON w.id = x.wishlist_id
-         WHERE {VISIBLE_WISHLISTS} AND x.deleted_at IS NULL AND x.rev > ?2
+        "SELECT {SECTION_COLS} FROM wish_sections x
+         WHERE x.wishlist_id IN (SELECT w.id FROM wishlists w WHERE {VISIBLE_WISHLISTS})
+           AND x.deleted_at IS NULL AND x.rev > ?2
          ORDER BY x.wishlist_id, x.position, x.id"
     ))
     .bind(uid)
@@ -125,8 +126,9 @@ pub async fn visible_items(
     since: i64,
 ) -> sqlx::Result<Vec<WishItem>> {
     sqlx::query_as(&format!(
-        "SELECT {ITEM_COLS} FROM wish_items x JOIN wishlists w ON w.id = x.wishlist_id
-         WHERE {VISIBLE_WISHLISTS} AND x.deleted_at IS NULL AND x.rev > ?2
+        "SELECT {ITEM_COLS} FROM wish_items x
+         WHERE x.wishlist_id IN (SELECT w.id FROM wishlists w WHERE {VISIBLE_WISHLISTS})
+           AND x.deleted_at IS NULL AND x.rev > ?2
          ORDER BY x.wishlist_id, x.position, x.id"
     ))
     .bind(uid)

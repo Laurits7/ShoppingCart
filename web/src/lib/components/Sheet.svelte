@@ -2,18 +2,32 @@
   // A modal sheet: slides up from the bottom on phones, a centred dialog on wide screens.
   // Built on <dialog>, so focus stays inside, Escape closes and the page behind is inert.
   import type { Snippet } from 'svelte'
+  import { enter, leave } from '../toplayer'
   import Icon from './Icon.svelte'
 
   let { open = $bindable(false), title, children }: { open: boolean; title: string; children: Snippet } = $props()
   let dlg: HTMLDialogElement
 
   $effect(() => {
-    if (open && !dlg.open) dlg.showModal()
-    else if (!open && dlg.open) dlg.close()
+    if (open && !dlg.open) {
+      dlg.showModal()
+      enter(dlg)
+    } else if (!open && dlg.open) dlg.close()
   })
+  // A sheet that goes away while open hands the toasts back to the page.
+  $effect(() => () => leave(dlg))
+
+  function closed() {
+    open = false
+    leave(dlg)
+    // If what opened it is gone (e.g. the item was deleted), put focus somewhere sensible.
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body || !document.activeElement) document.querySelector<HTMLElement>('main h1')?.focus()
+    })
+  }
 </script>
 
-<dialog bind:this={dlg} aria-label={title} onclose={() => (open = false)} onclick={(e) => e.target === dlg && dlg.close()}>
+<dialog bind:this={dlg} aria-label={title} onclose={closed} onclick={(e) => e.target === dlg && dlg.close()}>
   {#if open}
     <div class="sheet" data-autoscroll>
       <header>

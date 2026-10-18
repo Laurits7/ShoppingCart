@@ -76,7 +76,7 @@
   {#if busy}
     <p class="muted" aria-busy="true">Looking on Open Food Facts…</p>
   {:else if error}
-    <p class="error">{error === 'Not Found' ? 'Not found on Open Food Facts.' : error}</p>
+    <p class="error" role="alert">{error === 'Not Found' ? 'Not found on Open Food Facts.' : error}</p>
   {:else if searched && !results.length}
     <p class="muted">Nothing found. Try fewer or other words, or take a photo yourself.</p>
   {/if}

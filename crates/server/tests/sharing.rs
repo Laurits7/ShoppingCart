@@ -39,10 +39,7 @@ async fn world() -> World {
         )
         .await;
     let shop = r.json["shop"]["id"].as_str().unwrap().to_string();
-    let list = r.json["shop"]["default_list_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let list = r.json["lists"][0]["id"].as_str().unwrap().to_string();
     let r = t
         .req(
             "POST",
@@ -209,23 +206,14 @@ async fn viewers_read_editors_edit_owners_manage() {
             assert_eq!(r.status, StatusCode::FORBIDDEN, "{m} {path}");
         }
     }
-    // The shop and its staples stay Ann's.
+    // The shop stays Ann's: Eve can't start lists in it.
     let shop = &w.shop;
     let r = t
         .req(
-            "GET",
-            &format!("/api/v1/shops/{shop}/staples"),
-            Some(eve),
-            None,
-        )
-        .await;
-    assert_eq!(r.status, StatusCode::NOT_FOUND);
-    let r = t
-        .req(
             "POST",
-            &format!("/api/v1/shops/{shop}/items"),
+            "/api/v1/lists",
             Some(eve),
-            Some(json!({"name": "x"})),
+            Some(json!({"shop_id": shop, "name": "x"})),
         )
         .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);

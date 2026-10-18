@@ -38,3 +38,29 @@ Filled in at each phase gate (targets in spec §4.1).
 | 1 (2026-10-18) | 5 MB | 2.9 MiB | 25 KB |
 | 2 (2026-10-18) | 6 MB | 3.9 MiB | 40 KB |
 | 3b (2026-10-18) | 9 MB | 5.7 MiB (after processing a picture) | 55 KB |
+| 7 / 1.0 (2026-10-18) | 10 MB | 4.8 MiB | 54 KB (initial; pages and sheets load on demand) |
+
+Request times (release build on the development machine, kept-alive connection, a user with
+3 shops, 6 lists, 240 items, 300 catalogue entries and a 60-wish wishlist):
+
+| Request | Median | p95 |
+|---|---|---|
+| Tick an item (`PATCH /items/{id}`) | 2.0 ms | 2.5 ms |
+| Quick add (`POST /lists/{id}/items`) | 3.3 ms | 4.3 ms |
+| `GET /summary` | 2.8 ms | 4.4 ms |
+| Catch up, nothing new (`GET /sync?since=<rev>`) | 4.4 ms | 6.3 ms |
+| Everything at app start (`GET /sync?since=0`) | 22.6 ms | 30.2 ms |
+
+The full load at app start is the one heavy request (it happens once per start); a Raspberry
+Pi 4 is a few times slower.
+
+## Releasing
+1. Move the `[Unreleased]` notes in `CHANGELOG.md` under the new version and date; set the
+   version in `Cargo.toml` (workspace) and `web/package.json`.
+2. Commit, then tag and push the tag: `git tag v1.2.3 && git push origin v1.2.3`.
+3. The *Release* workflow builds the image for amd64 and arm64 (cross-compiled, see the
+   `Dockerfile`), pushes it to `ghcr.io/laurits7/shoppingcart` (`1.2.3`, `1.2`, `latest`) and
+   creates the GitHub release with the changelog section and a `docker-compose.yml` pinned to
+   that version.
+4. The GHCR package of a private repository is private: make it public in the package's
+   settings if others should pull it without signing in.

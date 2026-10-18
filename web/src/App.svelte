@@ -6,6 +6,8 @@
   import { match, router } from './lib/router.svelte'
   import { session } from './lib/session.svelte'
   import { connect, disconnect } from './lib/live'
+  import { pwa } from './lib/pwa.svelte'
+  import { clearSnapshot, loadSnapshot } from './lib/snapshot'
   import { shopping } from './lib/shopping.svelte'
   import Login from './views/Login.svelte'
   import Shopping from './views/Shopping.svelte'
@@ -14,6 +16,7 @@
   const settings = () => import('./views/Settings.svelte')
   const catalogSettings = () => import('./views/settings/Catalog.svelte')
   const wishlist = () => import('./views/Wishlist.svelte')
+  const templates = () => import('./views/Templates.svelte')
 
   let phase = $state<'loading' | 'login' | 'setup' | 'app' | 'error'>('loading')
 
@@ -27,6 +30,19 @@
       connect(() => shopping.sync())
       phase = 'app'
     } catch (e) {
+      // No connection: start from what was saved on this device, if anything (SPEC §6.7).
+      if (e instanceof ApiError && e.status === 0) {
+        const snap = await loadSnapshot()
+        if (snap) {
+          session.me = snap.me
+          shopping.outbox.online = false
+          shopping.apply(snap.data)
+          shopping.outbox.start(snap.me.id)
+          connect(() => shopping.sync())
+          phase = 'app'
+          return
+        }
+      }
       if (e instanceof ApiError && e.status === 401) {
         try {
           const s = await api.get<{ needs_setup: boolean }>('/setup')
@@ -41,6 +57,7 @@
   }
 
   boot()
+  pwa.start()
   onUnauthorized(() => {
     if (phase === 'app') {
       // Changes not sent yet stay queued for after signing in again.
@@ -59,8 +76,28 @@
     shopping.sync()
   })
   const offline = $derived(!shopping.outbox.online)
+
+  // After moving to another page: say where we are (title) and move focus to its heading,
+  // so screen readers announce the new page.
+  let firstPage = true
+  $effect(() => {
+    const name = route.name
+    void router.path
+    document.title = `${{ shopping: 'Shopping', templates: 'Templates', wishlist: 'Wishlist', settings: 'Settings', notfound: 'Not found' }[name]} · ShoppingCart`
+    if (firstPage) {
+      firstPage = false
+      return
+    }
+    requestAnimationFrame(() => {
+      const h = document.querySelector<HTMLElement>('main h1')
+      if (!h) return
+      h.tabIndex = -1
+      h.focus({ preventScroll: true })
+    })
+  })
   const tabs: { path: string; name: string; label: string; icon: IconName }[] = [
     { path: '/', name: 'shopping', label: 'Shopping', icon: 'cart' },
+    { path: '/templates', name: 'templates', label: 'Templates', icon: 'staples' },
     { path: '/wishlist', name: 'wishlist', label: 'Wishlist', icon: 'gift' },
     { path: '/settings', name: 'settings', label: 'Settings', icon: 'settings' },
   ]
@@ -94,13 +131,15 @@
       {/if}
       {#if route.name === 'shopping'}
         <Shopping listId={route.listId} />
+      {:else if route.name === 'templates'}
+        {#await templates() then m}<m.default />{/await}
       {:else if route.name === 'wishlist'}
         {#await wishlist() then m}<m.default wishlistId={route.wishlistId} />{/await}
       {:else if route.name === 'settings'}
         {#if route.page === 'catalog'}
           {#await catalogSettings() then m}<m.default />{/await}
         {:else}
-          {#await settings() then m}<m.default onlogout={() => (disconnect(), (session.me = null), shopping.reset(true), (phase = 'login'))} />{/await}
+          {#await settings() then m}<m.default onlogout={() => (disconnect(), clearSnapshot(), pwa.signedOut(), (session.me = null), shopping.reset(true), (phase = 'login'))} />{/await}
         {/if}
       {:else}
         <h1>Not found</h1>
@@ -110,7 +149,9 @@
   </div>
 {/if}
 <Toasts />
-<div class="sr-only" aria-live="assertive">{live.message}</div>
+<div id="live-region" class="sr-only" aria-live="assertive">{live.message}</div>
+<!-- How keyboard moves work, for every drag grip (aria-describedby). -->
+<p id="dnd-help" class="sr-only">To move it, press Space, then the up and down arrows, and Space again to drop it.</p>
 
 <style>
   .offline {
@@ -123,6 +164,9 @@
     background: var(--star-soft);
     color: var(--text);
     font-size: 14px;
+  }
+  main :global(h1:focus) {
+    outline: none;
   }
   .center {
     min-height: 100dvh;
@@ -145,7 +189,7 @@
     height: calc(var(--nav-h) + env(safe-area-inset-bottom));
     padding-bottom: env(safe-area-inset-bottom);
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     background: var(--surface);
     border-top: 1px solid var(--border);
     z-index: 10;

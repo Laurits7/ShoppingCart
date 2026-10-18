@@ -1,8 +1,10 @@
 <script lang="ts">
   import { api, message } from '../lib/api/client'
   import Icon from '../lib/components/Icon.svelte'
+  import { pwa } from '../lib/pwa.svelte'
   import { session } from '../lib/session.svelte'
   import { toast } from '../lib/toast.svelte'
+  import Backups from './settings/Backups.svelte'
   import Households from './settings/Households.svelte'
   import Integrations from './settings/Integrations.svelte'
   import Profile from './settings/Profile.svelte'
@@ -38,7 +40,25 @@
 <Security />
 <Tokens />
 <Integrations />
-{#if session.me?.is_admin}<Users />{/if}
+{#if session.me?.is_admin}<Users /><Backups />{/if}
+
+<section class="card settings-section">
+  <h2>Your data</h2>
+  <p class="muted small">Everything that's yours (shops, lists, staples, item catalogue, brands, wishlists and gift lists) as one JSON file.</p>
+  <div class="row"><a class="btn" href="/api/v1/export" download>Download my data</a></div>
+</section>
+
+{#if !pwa.installed && (pwa.installable || pwa.ios)}
+  <section class="card settings-section">
+    <h2>Install the app</h2>
+    {#if pwa.installable}
+      <p class="muted small">Put ShoppingCart on your home screen; it opens like an app and keeps working with a bad signal.</p>
+      <div class="row"><button class="btn primary" onclick={() => pwa.install()}>Install</button></div>
+    {:else}
+      <p class="muted small">On iPhone and iPad: tap Share, then <strong>Add to Home Screen</strong>.</p>
+    {/if}
+  </section>
+{/if}
 
 <section class="card about">
   <h2>About</h2>

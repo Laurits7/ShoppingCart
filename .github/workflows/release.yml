@@ -1,0 +1,59 @@
+name: Release
+
+# Pushing a tag like v1.0.0 builds the image for amd64 and arm64 (cross-compiled, no
+# emulation), pushes it to GHCR, and creates a GitHub release with that version's changelog
+# and a ready-to-use docker-compose.yml.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/shoppingcart
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    needs: image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Release notes and compose file
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # This version's section of CHANGELOG.md.
+          awk -v v="$version" '$0 ~ "^## \\[?"v"\\]?" {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          test -s notes.md
+          sed "s|ghcr.io/laurits7/shoppingcart:latest|ghcr.io/laurits7/shoppingcart:${version}|" deploy/docker-compose.yml > docker-compose.yml
+          grep -q ":${version}" docker-compose.yml
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --title "ShoppingCart $GITHUB_REF_NAME" --notes-file notes.md docker-compose.yml

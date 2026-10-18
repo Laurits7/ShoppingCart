@@ -10,7 +10,6 @@ import type { Product } from "./Product";
 import type { ProductPreference } from "./ProductPreference";
 import type { Shop } from "./Shop";
 import type { ShoppingList } from "./ShoppingList";
-import type { Staple } from "./Staple";
 import type { WishItem } from "./WishItem";
 import type { WishSection } from "./WishSection";
 import type { Wishlist } from "./Wishlist";
@@ -22,7 +21,7 @@ export type ShoppingData = {
 /**
  * Pass this as `since` next time.
  */
-rev: number, shops: Array<Shop>, lists: Array<ShoppingList>, categories: Array<Category>, items: Array<Item>, staples: Array<Staple>, catalog: Array<CatalogItem>, 
+rev: number, shops: Array<Shop>, lists: Array<ShoppingList>, categories: Array<Category>, items: Array<Item>, catalog: Array<CatalogItem>, 
 /**
  * Your products, and others' products pinned on lists you see.
  */

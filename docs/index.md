@@ -8,8 +8,8 @@ one data folder, and it works from any phone, tablet or computer on your network
     (Phase 1 of the [work plan](WORKPLAN.md)). The other pages describe how it works once each
     phase has landed; pages for features that don't exist yet say so.
 
-- **Shopping lists per shop**: categories, drag-and-drop ordering, a default list and a
-  staples template for every shop. See [Shops and lists](guides/shopping.md).
+- **Shopping lists per shop**: categories, drag-and-drop ordering, templates of your usual
+  items, and an inbox. See [Shops and lists](guides/shopping.md).
 - **Wishlists and gift lists**: topic sections for your own wishes, and gift ideas for others
   that the recipient never sees. See [Wishlists and gifts](guides/wishlists.md).
 - **Private by default**: share a list with a household or with individual people. See

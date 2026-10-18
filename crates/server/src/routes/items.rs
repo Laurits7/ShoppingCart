@@ -1,5 +1,5 @@
 //! Categories and items (SPEC §6.4): quick add with the duplicate guard, ticking, the −/+
-//! stepper, finish shopping and undo, adding staples to a list.
+//! stepper, Done (finish shopping) and undo, the inbox, adding a template's items to a list.
 
 use axum::{
     Json,
@@ -73,8 +73,10 @@ pub async fn visible_categories(
     since: i64,
 ) -> sqlx::Result<Vec<Category>> {
     sqlx::query_as(&format!(
-        "SELECT {} FROM categories c JOIN lists l ON l.id = c.list_id
-         WHERE {VISIBLE_LISTS} AND c.deleted_at IS NULL AND (?2 IS NULL OR l.shop_id = ?2) AND c.rev > ?3
+        // The visible lists are worked out once, not per row.
+        "SELECT {} FROM categories c
+         WHERE c.list_id IN (SELECT l.id FROM lists l WHERE {VISIBLE_LISTS} AND (?2 IS NULL OR l.shop_id = ?2))
+           AND c.deleted_at IS NULL AND c.rev > ?3
          ORDER BY c.list_id, c.position, c.id",
         cols("c.", CAT_COLS)
     ))
@@ -107,8 +109,9 @@ pub async fn visible_items(
     since: i64,
 ) -> sqlx::Result<Vec<Item>> {
     sqlx::query_as(&format!(
-        "SELECT {} FROM items i JOIN lists l ON l.id = i.list_id
-         WHERE {VISIBLE_LISTS} AND i.deleted_at IS NULL AND (?2 IS NULL OR i.list_id = ?2) AND i.rev > ?3
+        "SELECT {} FROM items i
+         WHERE i.list_id IN (SELECT l.id FROM lists l WHERE {VISIBLE_LISTS} AND (?2 IS NULL OR l.id = ?2))
+           AND i.deleted_at IS NULL AND i.rev > ?3
          ORDER BY i.list_id, i.position, i.id",
         cols("i.", ITEM_COLS)
     ))
@@ -404,8 +407,6 @@ async fn exact_product(
     }))
 }
 
-type StapleRow = (String, f64, Option<String>, Option<String>, Option<String>);
-
 #[derive(sqlx::FromRow)]
 struct OpenItem {
     id: String,
@@ -532,7 +533,7 @@ pub async fn add_item(
             None => None,
         },
     };
-    let shop_id: String = sqlx::query_scalar("SELECT shop_id FROM lists WHERE id = ?")
+    let shop_id: Option<String> = sqlx::query_scalar("SELECT shop_id FROM lists WHERE id = ?")
         .bind(list_id)
         .fetch_one(&mut *conn)
         .await?;
@@ -575,7 +576,7 @@ pub async fn add_item(
                 amount: amt,
                 unit: unit.as_deref(),
                 step,
-                shop_id: Some(&shop_id),
+                shop_id: shop_id.as_deref(),
             },
         )
         .await?;
@@ -611,7 +612,7 @@ pub async fn add_item(
             amount: amt,
             unit: unit.as_deref(),
             step,
-            shop_id: Some(&shop_id),
+            shop_id: shop_id.as_deref(),
         },
     )
     .await?;
@@ -675,22 +676,14 @@ pub async fn create_item(
     Ok(Json(added))
 }
 
-#[utoipa::path(post, path = "/shops/{id}/items", tag = "shopping", summary = "Add an item to the shop's default list", params(("id" = String, Path, description = "Shop ULID")), request_body = NewItem, responses((status = 200, body = AddedItem), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
-pub async fn create_shop_item(
+#[utoipa::path(post, path = "/inbox/items", tag = "shopping", summary = "Add an item to your inbox (no list chosen yet; assign it to a list later)", request_body = NewItem, responses((status = 200, body = AddedItem), (status = 400, body = crate::error::Problem)))]
+pub async fn create_inbox_item(
     State(state): State<AppState>,
     user: AuthUser,
-    Path(shop_id): Path<String>,
     Json(n): Json<NewItem>,
 ) -> ApiResult<Json<AddedItem>> {
     let mut tx = state.db.write.begin().await?;
-    visibility::require_shop(&mut tx, &user, &shop_id).await?;
-    let list_id: Option<String> =
-        sqlx::query_scalar("SELECT default_list_id FROM shops WHERE id = ?")
-            .bind(&shop_id)
-            .fetch_one(&mut *tx)
-            .await?;
-    let list_id = list_id.ok_or(AppError::NotFound)?;
-    visibility::require_list(&mut tx, &user, &list_id, Need::EditItems).await?;
+    let list_id = super::shops::inbox_id(&mut tx, user.id()).await?;
     let added = add_item(&mut tx, user.id(), &list_id, n, source_for(&user)).await?;
     tx.commit().await?;
     Ok(Json(added))
@@ -739,10 +732,11 @@ pub async fn patch_item(
         let catalog_id = match catalog::lookup(&mut tx, user.id(), &normalize_name(&n)).await? {
             Some(k) => k.id,
             None => {
-                let shop_id: String = sqlx::query_scalar("SELECT shop_id FROM lists WHERE id = ?")
-                    .bind(&list_id)
-                    .fetch_one(&mut *tx)
-                    .await?;
+                let shop_id: Option<String> =
+                    sqlx::query_scalar("SELECT shop_id FROM lists WHERE id = ?")
+                        .bind(&list_id)
+                        .fetch_one(&mut *tx)
+                        .await?;
                 catalog::record(
                     &mut tx,
                     user.id(),
@@ -752,7 +746,7 @@ pub async fn patch_item(
                         amount: item.amount,
                         unit: item.unit.as_deref(),
                         step: item.step,
-                        shop_id: Some(&shop_id),
+                        shop_id: shop_id.as_deref(),
                     },
                 )
                 .await?
@@ -969,7 +963,7 @@ pub struct Finished {
     pub removed: Vec<String>,
 }
 
-#[utoipa::path(post, path = "/lists/{id}/finish", tag = "shopping", summary = "Finish shopping: remove the items in the cart", params(("id" = String, Path, description = "List ULID")), responses((status = 200, body = Finished), (status = 403, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
+#[utoipa::path(post, path = "/lists/{id}/finish", tag = "shopping", summary = "Done (finish shopping): remove the ticked items", params(("id" = String, Path, description = "List ULID")), responses((status = 200, body = Finished), (status = 403, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
 pub async fn finish(
     State(state): State<AppState>,
     user: AuthUser,
@@ -992,52 +986,84 @@ pub async fn finish(
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
-pub struct StapleToAdd {
-    staple_id: String,
+pub struct TemplateItemToAdd {
+    /// An item of the template.
+    item_id: String,
     /// Optional client-chosen ULID for the new item.
     id: Option<String>,
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
-pub struct AddStaples {
-    staples: Vec<StapleToAdd>,
+pub struct AddFromTemplate {
+    template_id: String,
+    /// Which of the template's items; absent: all of them.
+    items: Option<Vec<TemplateItemToAdd>>,
 }
 
-#[utoipa::path(post, path = "/lists/{id}/staples", tag = "shopping", summary = "Add staples of the list's shop to the list", params(("id" = String, Path, description = "List ULID")), request_body = AddStaples, responses((status = 200, body = Vec<AddedItem>), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
-pub async fn add_staples(
+/// One template item: what to add.
+#[derive(sqlx::FromRow)]
+struct TemplateItem {
+    id: String,
+    name: String,
+    amount: f64,
+    unit: Option<String>,
+    step: Option<f64>,
+    note: String,
+    product_id: Option<String>,
+    category: Option<String>,
+}
+
+#[utoipa::path(post, path = "/lists/{id}/from-template", tag = "shopping", summary = "Add a template's items (all, or the ones given) to a list; ones already open there get the amount added", params(("id" = String, Path, description = "List ULID")), request_body = AddFromTemplate, responses((status = 200, body = Vec<AddedItem>), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
+pub async fn add_from_template(
     State(state): State<AppState>,
     user: AuthUser,
     Path(list_id): Path<String>,
-    Json(a): Json<AddStaples>,
+    Json(a): Json<AddFromTemplate>,
 ) -> ApiResult<Json<Vec<AddedItem>>> {
-    if a.staples.len() > 500 {
-        return Err(bad("at most 500 staples at once"));
+    if a.items.as_ref().is_some_and(|i| i.len() > 500) {
+        return Err(bad("at most 500 items at once"));
     }
     let mut tx = state.db.write.begin().await?;
     visibility::require_list(&mut tx, &user, &list_id, Need::EditItems).await?;
-    let list_shop: String = sqlx::query_scalar("SELECT shop_id FROM lists WHERE id = ?")
-        .bind(&list_id)
-        .fetch_one(&mut *tx)
-        .await?;
-    let mut out = Vec::with_capacity(a.staples.len());
-    for s in a.staples {
-        let shop = visibility::require_staple(&mut tx, &user, &s.staple_id).await?;
-        if shop != list_shop {
-            return Err(bad("that staple belongs to another shop"));
-        }
-        let (sname, samount, sunit, scat, sproduct): StapleRow = sqlx::query_as(
-            "SELECT name, amount, unit, category_name, product_id FROM staples WHERE id = ?",
-        )
-        .bind(&s.staple_id)
-        .fetch_one(&mut *tx)
-        .await?;
+    visibility::require_list(&mut tx, &user, &a.template_id, Need::Read).await?;
+    if super::shops::list_kind(&mut tx, &a.template_id)
+        .await?
+        .as_deref()
+        != Some("template")
+    {
+        return Err(bad("that isn't a template"));
+    }
+    let all: Vec<TemplateItem> = sqlx::query_as(
+        "SELECT i.id, i.name, i.amount, i.unit, i.step, i.note, i.product_id, c.name AS category
+         FROM items i LEFT JOIN categories c ON c.id = i.category_id AND c.deleted_at IS NULL
+         WHERE i.list_id = ? AND i.deleted_at IS NULL ORDER BY i.position, i.id",
+    )
+    .bind(&a.template_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let picked: Vec<(&TemplateItem, Option<String>)> = match &a.items {
+        None => all.iter().map(|t| (t, None)).collect(),
+        Some(want) => want
+            .iter()
+            .map(|w| {
+                all.iter()
+                    .find(|t| t.id == w.item_id)
+                    .map(|t| (t, w.id.clone()))
+                    .ok_or_else(|| bad("that item isn't on the template"))
+            })
+            .collect::<ApiResult<_>>()?,
+    };
+    let mut out = Vec::with_capacity(picked.len());
+    for (t, id) in picked {
         let n = NewItem {
-            id: s.id,
-            name: Some(sname),
-            amount: Some(samount),
-            unit: Some(sunit.unwrap_or_default()),
-            category_name: scat,
-            product_id: sproduct,
+            id,
+            name: Some(t.name.clone()),
+            amount: Some(t.amount),
+            unit: Some(t.unit.clone().unwrap_or_default()),
+            step: t.step,
+            note: Some(t.note.clone()),
+            category_name: t.category.clone(),
+            product_id: t.product_id.clone(),
             ..Default::default()
         };
         out.push(add_item(&mut tx, user.id(), &list_id, n, "staple").await?);

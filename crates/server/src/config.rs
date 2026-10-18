@@ -34,6 +34,8 @@ pub struct Config {
     pub product_lookup: Option<LookupConfig>,
     /// `SECRET_KEY`, if given (otherwise `data/secret.key` is used, created on first start).
     pub secret_key: Option<String>,
+    /// Nightly backups to keep in `data/backups/` (`BACKUP_KEEP`); 0 switches them off.
+    pub backup_keep: usize,
 }
 
 /// The product lookup provider's addresses (Open Food Facts; tests use a fake server).
@@ -85,6 +87,11 @@ impl Config {
         if !(1..=64).contains(&max_upload_mb) {
             bail!("MAX_UPLOAD_MB must be between 1 and 64");
         }
+        let backup_keep: usize = var("BACKUP_KEEP")
+            .map(|v| v.parse())
+            .transpose()
+            .context("BACKUP_KEEP")?
+            .unwrap_or(7);
         let product_lookup = match var("PRODUCT_LOOKUP").as_deref().unwrap_or("openfoodfacts") {
             "off" | "false" | "0" => None,
             "openfoodfacts" => Some(LookupConfig::open_food_facts()),
@@ -110,6 +117,7 @@ impl Config {
             max_upload_bytes: max_upload_mb * 1024 * 1024,
             product_lookup,
             secret_key: var("SECRET_KEY"),
+            backup_keep,
         })
     }
 
@@ -129,6 +137,7 @@ impl Config {
             // Tests never reach the internet; lookup tests plug in a fake provider.
             product_lookup: None,
             secret_key: None,
+            backup_keep: 7,
         }
     }
 }

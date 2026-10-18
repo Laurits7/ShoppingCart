@@ -3,10 +3,12 @@
   import type { WishItem } from '../../lib/api/types/WishItem'
   import type { Wishlist } from '../../lib/api/types/Wishlist'
   import Sheet from '../../lib/components/Sheet.svelte'
+  import UpDown from '../../lib/components/UpDown.svelte'
   import { toast } from '../../lib/toast.svelte'
   import { wishes, type WishInput } from '../../lib/wishes.svelte'
 
   let { open = $bindable(false), wishlist, item = null }: { open: boolean; wishlist: Wishlist; item?: WishItem | null } = $props()
+  let copyTo = $state('')
   let f = $state({ title: '', url: '', price: '', currency: '', note: '', priority: 0, section: '' })
 
   $effect(() => {
@@ -18,6 +20,8 @@
   })
 
   const sections = $derived(wishes.sectionsOf(wishlist.id))
+  // Its place among the open wishes of its section, for moving without dragging.
+  const siblings = $derived(item && !item.received_at ? wishes.openOf(wishlist.id).filter((i) => (i.section_id ?? null) === (item!.section_id ?? null)) : [])
   const others = $derived(wishes.wishlists.filter((w) => w.id !== wishlist.id && w.role !== 'viewer'))
 
   function save(e: Event) {
@@ -58,6 +62,12 @@
       </select>
     </label>
     <label class="field wide"><span>Note</span><textarea bind:value={f.note} maxlength="1000" placeholder="Size, colour, where to find it…"></textarea></label>
+    {#if item && siblings.length > 1}
+      <div class="field wide order">
+        <span>Order</span>
+        <UpDown what={item.title} index={siblings.findIndex((i) => i.id === item!.id)} count={siblings.length} onmove={(to) => wishes.moveItem(item!, item!.section_id ?? null, to)} />
+      </div>
+    {/if}
     <div class="actions wide">
       <button class="btn primary" type="submit">{item ? 'Save' : 'Add'}</button>
       {#if item}
@@ -65,18 +75,22 @@
           {item.received_at ? 'Not received' : 'Received'}
         </button>
         {#if others.length}
-          <select
-            class="copy"
-            aria-label="Copy to another wishlist"
-            onchange={(e) => {
-              const to = others.find((w) => w.id === e.currentTarget.value)
-              if (to && item) wishes.copyItem(item, to)
-              e.currentTarget.value = ''
-            }}
-          >
-            <option value="">Copy to…</option>
-            {#each others as w (w.id)}<option value={w.id}>{w.title}</option>{/each}
-          </select>
+          <span class="copy">
+            <select bind:value={copyTo} aria-label="Copy to another wishlist">
+              <option value="">Copy to…</option>
+              {#each others as w (w.id)}<option value={w.id}>{w.title}</option>{/each}
+            </select>
+            <button
+              class="btn"
+              type="button"
+              disabled={!copyTo}
+              onclick={() => {
+                const to = others.find((w) => w.id === copyTo)
+                if (to && item) wishes.copyItem(item, to)
+                copyTo = ''
+              }}>Copy</button
+            >
+          </span>
         {/if}
         <span class="spacer"></span>
         <button class="btn danger" type="button" onclick={() => (wishes.removeItem(item), (open = false))}>Delete</button>
@@ -86,7 +100,16 @@
 </Sheet>
 
 <style>
+  .order {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
   .copy {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .copy select {
     width: auto;
   }
 </style>

@@ -74,10 +74,6 @@
       autocomplete="off"
       enterkeyhint="done"
       maxlength="200"
-      role="combobox"
-      aria-expanded={suggestions.length > 0}
-      aria-controls="suggestions-{listId}"
-      aria-activedescendant={selected >= 0 ? `suggestion-${listId}-${selected}` : undefined}
     />
     {#if text}
       <button type="button" class="icon-btn" aria-label="Clear" onclick={() => ((text = ''), input.focus())}><Icon name="x" size={18} /></button>
@@ -86,10 +82,11 @@
     {/if}
   </div>
   {#if suggestions.length}
-    <ul id="suggestions-{listId}" role="listbox" aria-label="Suggestions">
+    <!-- Plain buttons (Tab reaches them); the arrow keys highlight one for Enter. -->
+    <ul id="suggestions-{listId}" aria-label="Suggestions">
       {#each suggestions as c, i (c.id)}
         {@const open = onList(c)}
-        <li id="suggestion-{listId}-{i}" role="option" aria-selected={i === selected}>
+        <li>
           <button type="button" class:selected={i === selected} onclick={() => pick(c)}>
             <span class="name">{c.name}</span>
             {#if c.category_name}<span class="muted small">{c.category_name}</span>{/if}
@@ -99,7 +96,7 @@
         </li>
         {#each shopping.productsOf(c.id).slice(0, 3) as p (p.id)}
           {@const pOpen = onList(c, p.id)}
-          <li role="option" aria-selected="false" class="product">
+          <li class="product">
             <button type="button" onclick={() => (shopping.add(listId, { name: c.name, amount: null, unit: null, productId: p.id }), input.focus())}>
               {#if p.image_id}<Thumb id={p.image_id} size={28} />{/if}
               <span class="name">{c.name} · {label(p.brand, p.name)}</span>
@@ -111,7 +108,7 @@
       {/each}
     </ul>
   {:else if chips.length}
-    <div class="chips" aria-label="Often bought here">
+    <div class="chips" role="group" aria-label="Often bought here">
       {#each chips as c (c.id)}
         <button type="button" class="chip" onclick={() => shopping.add(listId, { name: c.name, amount: null, unit: null })}><Icon name="plus" size={14} />{c.name}</button>
       {/each}
@@ -148,7 +145,7 @@
     gap: 4px;
     padding-left: 12px;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--field-border);
     border-radius: var(--radius);
     color: var(--muted);
   }

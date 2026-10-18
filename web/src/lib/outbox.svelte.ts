@@ -5,6 +5,7 @@
 // with a message, and the store resyncs.
 
 import { ApiError } from './api/client'
+import { tx } from './idb'
 
 export type Entry = {
   seq?: number
@@ -46,34 +47,17 @@ export class MemoryStore implements Store {
 
 /** IndexedDB, so changes made in a dead zone survive closing the app. */
 export class IdbStore implements Store {
-  #db: Promise<IDBDatabase>
-  constructor() {
-    this.#db = new Promise((ok, fail) => {
-      const req = indexedDB.open('shoppingcart', 1)
-      req.onupgradeneeded = () => req.result.createObjectStore('outbox', { keyPath: 'seq', autoIncrement: true })
-      req.onsuccess = () => ok(req.result)
-      req.onerror = () => fail(req.error)
-    })
-  }
-  async #tx<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-    const db = await this.#db
-    return new Promise((ok, fail) => {
-      const req = f(db.transaction('outbox', mode).objectStore('outbox'))
-      req.onsuccess = () => ok(req.result)
-      req.onerror = () => fail(req.error)
-    })
-  }
   all() {
-    return this.#tx('readonly', (s) => s.getAll() as IDBRequest<Entry[]>)
+    return tx('outbox', 'readonly', (s) => s.getAll() as IDBRequest<Entry[]>)
   }
   async add(e: Entry) {
-    return (await this.#tx('readwrite', (s) => s.add(e))) as number
+    return (await tx('outbox', 'readwrite', (s) => s.add(e))) as number
   }
   async remove(seq: number) {
-    await this.#tx('readwrite', (s) => s.delete(seq))
+    await tx('outbox', 'readwrite', (s) => s.delete(seq))
   }
   async clear() {
-    await this.#tx('readwrite', (s) => s.clear())
+    await tx('outbox', 'readwrite', (s) => s.clear())
   }
 }
 

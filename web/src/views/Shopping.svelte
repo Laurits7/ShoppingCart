@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The Shopping tab: every shop with its lists and their items on one page, or one list
-  // full screen (/list/{id}).
+  // The Shopping tab: the inbox, then every shop with its active lists and their items on
+  // one page; or one list or template full screen (/list/{id}).
   import { message } from '../lib/api/client'
   import type { Item } from '../lib/api/types/Item'
   import type { ShoppingList } from '../lib/api/types/ShoppingList'
@@ -13,12 +13,14 @@
   import ListCard from './shopping/ListCard.svelte'
   import ListMenu from './shopping/ListMenu.svelte'
   import ListView from './shopping/ListView.svelte'
-  import StaplesSheet from './shopping/StaplesSheet.svelte'
+  import MoveSheet from './shopping/MoveSheet.svelte'
+  import TemplateSheet from './shopping/TemplateSheet.svelte'
 
   let { listId }: { listId?: string } = $props()
   let error = $state('')
   let newShop = $state('')
   let newList = $state('')
+  let newFrom = $state('')
   let addingListTo = $state<string | null>(null)
   let showArchived = $state<string | null>(null)
 
@@ -28,8 +30,10 @@
   let editFocus = $state<'amount' | undefined>()
   let menuList = $state<ShoppingList | null>(null)
   let menuOpen = $state(false)
-  let staplesList = $state<ShoppingList | null>(null)
-  let staplesOpen = $state(false)
+  let templateList = $state<ShoppingList | null>(null)
+  let templateOpen = $state(false)
+  let assigning = $state<Item | null>(null)
+  let assignOpen = $state(false)
 
   let shown = $state<Item | null>(null)
   let pictureOpen = $state(false)
@@ -38,14 +42,24 @@
 
   const edit = (item: Item, focus?: 'amount') => ((editing = item), (editFocus = focus), (editOpen = true))
   const menu = (l: ShoppingList) => ((menuList = l), (menuOpen = true))
-  const staples = (l: ShoppingList) => ((staplesList = l), (staplesOpen = true))
+  const fromTemplate = (l: ShoppingList) => ((templateList = l), (templateOpen = true))
+  const assign = (item: Item) => ((assigning = item), (assignOpen = true))
 
   if (!shopping.loaded) shopping.load().catch((e) => (error = message(e)))
 
   const current = $derived(listId ? (shopping.list(listId) ?? null) : null)
   const shop = $derived(current ? shopping.shop(current.shop_id) : undefined)
   // Lists shared with you sit under their owner's shop, which isn't one of yours (Phase 4).
-  const shared = $derived(shopping.lists.filter((l) => !l.archived_at && !shopping.shop(l.shop_id)))
+  const shared = $derived(shopping.lists.filter((l) => l.kind === 'list' && !l.archived_at && !shopping.shop(l.shop_id)))
+  const inbox = $derived(shopping.inbox)
+  const inboxCount = $derived(inbox ? shopping.itemsOf(inbox.id).length : 0)
+  const cart = $derived(current ? shopping.cartOf(current.id) : [])
+
+  async function listFromTemplate(t: ShoppingList) {
+    if (!t.shop_id) return
+    const id = await shopping.createList(t.shop_id, t.name, { templateId: t.id })
+    if (id) router.go(`/list/${id}`)
+  }
 
   function moveList(id: string, index: number) {
     const l = shopping.list(id)
@@ -68,8 +82,9 @@
     e.preventDefault()
     const name = newList.trim()
     if (!name) return
-    await shopping.createList(shopId, name)
+    await shopping.createList(shopId, name, { templateId: newFrom || null })
     newList = ''
+    newFrom = ''
     addingListTo = null
   }
 </script>
@@ -83,17 +98,33 @@
   <p class="muted" aria-busy="true">Loading…</p>
 {:else if listId}
   {#if current}
-    <a class="back" href="/"><Icon name="chevronRight" size={18} /> All lists</a>
+    {#if current.kind === 'template'}
+      <a class="back" href="/templates"><Icon name="chevronRight" size={18} /> Templates</a>
+    {:else}
+      <a class="back" href="/"><Icon name="chevronRight" size={18} /> All lists</a>
+    {/if}
     <header class="list-head">
       <span class="titles">
-        <span class="shop"><span class="dot" style:background={shop?.color ?? undefined}></span>{shop?.name ?? `${current.shop_name} · ${current.owner_name}'s list`}</span>
+        <span class="shop">
+          {#if current.kind === 'inbox'}From Mealie and other apps
+          {:else}<span class="dot" style:background={shop?.color ?? undefined}></span>{shop?.name ?? `${current.shop_name} · ${current.owner_name}'s list`}{current.kind === 'template' ? ' · template' : ''}{/if}
+        </span>
         <h1>{current.name}{#if current.archived_at}<span class="muted small"> (archived)</span>{/if}</h1>
       </span>
       <span class="tools">
-        {#if current.role === 'owner'}<button class="icon-btn" aria-label="Staples" title="Staples" onclick={() => staples(current)}><Icon name="staples" /></button>{/if}
-        <button class="icon-btn" aria-label="List and shop settings" title="List and shop" onclick={() => menu(current)}><Icon name="more" /></button>
+        {#if current.kind === 'list' && cart.length && current.role !== 'viewer'}
+          <button class="btn primary small" title="Done: clear the ticked items" onclick={() => shopping.finish(current.id)}><Icon name="check" size={16} /> Done</button>
+        {/if}
+        {#if current.kind === 'list' && current.role !== 'viewer'}<button class="icon-btn" aria-label="Add from a template" title="Add from a template" onclick={() => fromTemplate(current)}><Icon name="staples" /></button>{/if}
+        {#if current.kind !== 'inbox'}<button class="icon-btn" aria-label="List and shop settings" title="List and shop" onclick={() => menu(current)}><Icon name="more" /></button>{/if}
       </span>
     </header>
+    {#if current.kind === 'template'}
+      <div class="template-bar">
+        <p class="muted small">A template isn't ticked off: it's what a new list starts with.</p>
+        {#if current.shop_id && shopping.shop(current.shop_id)}<button class="btn small" onclick={() => listFromTemplate(current)}><Icon name="plus" size={16} /> New list from it</button>{/if}
+      </div>
+    {/if}
     {#key current.id}
       <ListView list={current} />
     {/key}
@@ -103,6 +134,11 @@
   {/if}
 {:else}
   <h1 class="page-title">Shopping</h1>
+  {#if inbox && inboxCount}
+    <section class="shop-block">
+      <ListCard list={inbox} onedit={edit} ontemplate={fromTemplate} onmenu={menu} onpicture={showPicture} onassign={assign} />
+    </section>
+  {/if}
   {#if !shopping.shops.length && !shared.length}
     <div class="card pad">
       <p><strong>Where do you shop?</strong> Start with one shop, say your supermarket. It gets a shopping list right away; add more shops and lists any time.</p>
@@ -114,24 +150,28 @@
     {@const archived = shopping.listsOf(s.id, true)}
     <section class="shop-block" data-id={s.id} data-label={s.name} use:draggable={{ item: () => ({ kind: 'shop', id: s.id }), handleOnly: true }}>
       <h2>
-        <span class="grip" data-handle tabindex="0" role="button" aria-label="Move shop {s.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
+        <span class="grip" data-handle tabindex="0" role="button" aria-describedby="dnd-help" aria-label="Move shop {s.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
         <span class="dot" style:background={s.color ?? undefined}></span>{s.name}
       </h2>
       <div use:dropList={{ accepts: (it) => it.kind === 'list' && it.shopId === s.id, drop: (it, i) => moveList(it.id, i), keyMove: moveList }}>
         {#each shopping.listsOf(s.id) as l (l.id)}
-          <ListCard list={l} onedit={edit} onstaples={staples} onmenu={menu} onpicture={showPicture} />
+          <ListCard list={l} onedit={edit} ontemplate={fromTemplate} onmenu={menu} onpicture={showPicture} />
         {/each}
       </div>
       <div class="shop-foot">
         {#if addingListTo === s.id}
           <form class="row" onsubmit={(e) => createList(e, s.id)}>
             <!-- svelte-ignore a11y_autofocus -->
-            <input bind:value={newList} placeholder="List name, e.g. Party on Saturday" aria-label="New list in {s.name}" maxlength="200" autofocus />
-            <button class="btn" type="submit">Add</button>
+            <input bind:value={newList} placeholder="List name, e.g. Saturday" aria-label="New list in {s.name}" maxlength="200" autofocus />
+            <select bind:value={newFrom} aria-label="Start from">
+              <option value="">Empty</option>
+              {#each shopping.templatesOf(s.id) as t (t.id)}<option value={t.id}>From template: {t.name}</option>{/each}
+            </select>
+            <button class="btn" type="submit">Create</button>
             <button class="btn" type="button" onclick={() => (addingListTo = null)}>Cancel</button>
           </form>
         {:else}
-          <button class="link" onclick={() => ((addingListTo = s.id), (newList = ''))}><Icon name="plus" size={16} /> New list in {s.name}</button>
+          <button class="link" onclick={() => ((addingListTo = s.id), (newList = ''), (newFrom = shopping.templatesOf(s.id)[0]?.id ?? ''))}><Icon name="plus" size={16} /> New list in {s.name}</button>
         {/if}
         {#if archived.length}
           <button class="link muted" onclick={() => (showArchived = showArchived === s.id ? null : s.id)}>{showArchived === s.id ? 'Hide' : 'Show'} archived ({archived.length})</button>
@@ -149,7 +189,7 @@
   {#if shared.length}
     <section class="shop-block">
       <h2>Shared with me</h2>
-      {#each shared as l (l.id)}<ListCard list={l} onedit={edit} onstaples={staples} onmenu={menu} onpicture={showPicture} />{/each}
+      {#each shared as l (l.id)}<ListCard list={l} onedit={edit} ontemplate={fromTemplate} onmenu={menu} onpicture={showPicture} />{/each}
     </section>
   {/if}
 
@@ -168,7 +208,8 @@
 {/if}
 
 {#if menuList}<ListMenu bind:open={menuOpen} list={menuList} />{/if}
-{#if staplesList}<StaplesSheet bind:open={staplesOpen} list={staplesList} />{/if}
+{#if templateList}<TemplateSheet bind:open={templateOpen} list={templateList} />{/if}
+{#if assigning}<MoveSheet bind:open={assignOpen} items={[assigning]} />{/if}
 
 <style>
   .pad {
@@ -178,6 +219,17 @@
   .pad p {
     margin: 0 0 8px;
   }
+  .template-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: -6px 0 12px;
+  }
+  .template-bar p {
+    margin: 0;
+  }
   .page-title {
     margin-bottom: 12px;
   }
@@ -185,6 +237,15 @@
     display: flex;
     gap: 8px;
     flex: 1;
+    flex-wrap: wrap;
+  }
+  .row input {
+    flex: 1 1 160px;
+    width: auto;
+  }
+  .row select {
+    flex: 1 1 140px;
+    width: auto;
   }
   .shop-block {
     margin-bottom: 20px;

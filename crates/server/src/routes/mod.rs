@@ -1,4 +1,5 @@
 pub mod account;
+pub mod admin;
 pub mod catalog;
 pub mod households;
 pub mod images;
@@ -8,7 +9,6 @@ pub mod lookup;
 pub mod products;
 pub mod shares;
 pub mod shops;
-pub mod staples;
 pub mod summary;
 pub mod sync;
 pub mod wishes;
@@ -49,6 +49,7 @@ use crate::AppState;
         households::list, households::create, households::patch, households::delete,
         households::add_member, households::patch_member, households::remove_member,
         sync::shopping, sync::sync, sync::ticket, sync::events, summary::summary,
+        admin::backups, admin::backup_now, admin::download, admin::export,
         integrations::list, integrations::create, integrations::patch, integrations::delete,
         integrations::sync_now, integrations::mealie_lists,
         shares::list, shares::create, shares::patch, shares::delete,
@@ -61,11 +62,9 @@ use crate::AppState;
         shops::list_shops, shops::create_shop, shops::patch_shop, shops::delete_shop,
         shops::list_lists, shops::get_list, shops::create_list, shops::patch_list, shops::delete_list,
         items::get_categories, items::create_category, items::patch_category, items::delete_category,
-        items::get_items, items::create_item, items::create_shop_item, items::patch_item,
-        items::step_item, items::delete_item, items::restore_items, items::finish, items::add_staples,
-        staples::list, staples::create, staples::patch, staples::delete,
+        items::get_items, items::create_item, items::create_inbox_item, items::patch_item,
+        items::step_item, items::delete_item, items::restore_items, items::finish, items::add_from_template,
         shops::move_shop, shops::move_list, items::move_category, items::move_item, items::move_items,
-        staples::move_staple,
         images::upload, images::get, lookup::search, lookup::barcode, lookup::picture, lookup::import,
         products::list, products::create, products::patch, products::delete, products::set_preferred,
         catalog::search, catalog::frequent, catalog::patch, catalog::delete, catalog::merge,
@@ -74,12 +73,13 @@ use crate::AppState;
         (name = "account", description = "Setup, sign-in, profile, sessions and API tokens"),
         (name = "users", description = "User management (admins) and the user directory"),
         (name = "households", description = "Households: groups of people to share with"),
-        (name = "shopping", description = "Shops, lists, categories, items and staples"),
+        (name = "shopping", description = "Shops, lists, templates, the inbox, categories and items"),
         (name = "catalog", description = "Your item catalogue: everything you've added before"),
         (name = "products", description = "Brands, pictures and product lookups"),
         (name = "sharing", description = "Sharing lists and wishlists with people and households"),
         (name = "wishlists", description = "Wishlists, gift lists, persons and claims"),
         (name = "integrations", description = "Mealie, Streamline and other apps"),
+        (name = "admin", description = "Backups (admins)"),
     )
 )]
 pub struct ApiDoc;
@@ -202,6 +202,12 @@ pub fn router(state: AppState) -> Router {
         .route("/shopping", get(sync::shopping))
         .route("/sync", get(sync::sync))
         .route("/summary", get(summary::summary))
+        .route("/export", get(admin::export))
+        .route(
+            "/admin/backups",
+            get(admin::backups).post(admin::backup_now),
+        )
+        .route("/admin/backups/{name}", get(admin::download))
         .route(
             "/integrations",
             get(integrations::list).post(integrations::create),
@@ -260,21 +266,12 @@ pub fn router(state: AppState) -> Router {
             "/shops/{id}",
             patch(shops::patch_shop).delete(shops::delete_shop),
         )
-        .route("/shops/{id}/items", post(items::create_shop_item))
+        .route("/inbox/items", post(items::create_inbox_item))
         .route("/shops/{id}/move", post(shops::move_shop))
         .route("/lists/{id}/move", post(shops::move_list))
         .route("/categories/{id}/move", post(items::move_category))
-        .route("/staples/{id}/move", post(staples::move_staple))
         .route("/items/move", post(items::move_items))
         .route("/items/{id}/move", post(items::move_item))
-        .route(
-            "/shops/{id}/staples",
-            get(staples::list).post(staples::create),
-        )
-        .route(
-            "/staples/{id}",
-            patch(staples::patch).delete(staples::delete),
-        )
         .route("/lists", get(shops::list_lists).post(shops::create_list))
         .route(
             "/lists/{id}",
@@ -291,7 +288,7 @@ pub fn router(state: AppState) -> Router {
             get(items::get_items).post(items::create_item),
         )
         .route("/lists/{id}/finish", post(items::finish))
-        .route("/lists/{id}/staples", post(items::add_staples))
+        .route("/lists/{id}/from-template", post(items::add_from_template))
         .route(
             "/categories/{id}",
             patch(items::patch_category).delete(items::delete_category),

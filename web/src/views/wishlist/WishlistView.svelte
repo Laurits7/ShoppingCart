@@ -3,6 +3,7 @@
   import type { Wishlist } from '../../lib/api/types/Wishlist'
   import Icon from '../../lib/components/Icon.svelte'
   import Sheet from '../../lib/components/Sheet.svelte'
+  import UpDown from '../../lib/components/UpDown.svelte'
   import { draggable, dropList, dnd, type DragItem } from '../../lib/dnd.svelte'
   import { router } from '../../lib/router.svelte'
   import { wishes } from '../../lib/wishes.svelte'
@@ -92,7 +93,7 @@
   {#each groups.filter((g) => g.id) as g (g.id)}
     <section class="card" data-id={g.id} data-label={g.name} use:draggable={{ item: () => ({ kind: 'wish_section', id: g.id!, wishlistId: wishlist.id }), disabled: !canEdit, handleOnly: true }}>
       <h2>
-        {#if canEdit}<span class="grip" data-handle tabindex="0" role="button" aria-label="Move section {g.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>{/if}
+        {#if canEdit}<span class="grip" data-handle tabindex="0" role="button" aria-describedby="dnd-help" aria-label="Move section {g.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>{/if}
         {g.name} <span class="badge">{g.items.length}</span>
       </h2>
       <ul class:empty-drop={!g.items.length} use:dropList={wishDrop(g.id)}>
@@ -128,6 +129,9 @@
       <button class="btn" type="submit">Rename</button>
     </form>
   {/if}
+  {#if owner && wishlist.kind === 'own' && wishes.mine.length > 1}
+    <div class="order"><span class="muted small">Order of your wishlists</span><UpDown what="wishlist {wishlist.title}" index={wishes.mine.findIndex((w) => w.id === wishlist.id)} count={wishes.mine.length} onmove={(to) => wishes.moveWishlist(wishlist, to)} /></div>
+  {/if}
   <div class="actions">
     <button class="btn" onclick={() => ((menuOpen = false), (shareOpen = true))}>{owner ? 'Share…' : 'Who can see it…'}</button>
     {#if owner}<span class="spacer"></span><button class="btn danger" onclick={remove}>Delete wishlist</button>{/if}
@@ -135,8 +139,9 @@
   {#if canEdit}
     <h3>Sections</h3>
     <ul class="sections">
-      {#each sections as s (s.id)}
+      {#each sections as s, i (s.id)}
         <li>
+          <UpDown what="section {s.name}" index={i} count={sections.length} onmove={(to) => wishes.moveSection(s, to)} />
           <input
             value={s.name}
             aria-label="Section name"
@@ -247,6 +252,11 @@
   h3 {
     font-size: 14px;
     margin: 8px 0 0;
+  }
+  .order {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
   .sections li {
     display: flex;

@@ -24,11 +24,11 @@
   use:draggable={{ item: () => ({ kind: 'wish', id: item.id, wishlistId: item.wishlist_id }), disabled: !canEdit || received }}
 >
   {#if canEdit && !received}
-    <span class="grip" data-handle tabindex="0" role="button" aria-label="Move {item.title}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
+    <span class="grip" data-handle tabindex="0" role="button" aria-describedby="dnd-help" aria-label="Move {item.title}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
   {/if}
   <div class="body">
     <div class="head">
-      {#if item.priority > 0}<span class="prio" title={item.priority === 2 ? 'Most wanted' : 'Would like a lot'} aria-label={item.priority === 2 ? 'most wanted' : 'would like a lot'}>{'★'.repeat(Number(item.priority))}</span>{/if}
+      {#if item.priority > 0}<span class="prio" role="img" title={item.priority === 2 ? 'Most wanted' : 'Would like a lot'} aria-label={item.priority === 2 ? 'most wanted' : 'would like a lot'}>{'★'.repeat(Number(item.priority))}</span>{/if}
       {#if item.url}
         <a href={item.url} target="_blank" rel="noopener noreferrer" data-nodrag>{item.title}</a>
       {:else}

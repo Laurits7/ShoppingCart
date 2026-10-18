@@ -121,30 +121,31 @@ pub struct Shop {
     pub color: Option<String>,
     /// Fractional-index ordering key.
     pub position: String,
-    /// Where items go when no list is chosen (SPEC §6.2).
-    pub default_list_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     #[ts(type = "number")]
     pub rev: i64,
 }
 
-/// A shopping list in a shop. Lists are the unit of sharing.
+/// A shopping list or template in a shop, or the user's inbox. Lists are the unit of sharing.
 #[derive(Debug, Clone, Serialize, FromRow, TS, utoipa::ToSchema)]
 #[ts(export)]
 pub struct ShoppingList {
     pub id: String,
-    pub shop_id: String,
+    /// None for the inbox.
+    pub shop_id: Option<String>,
     pub owner_id: String,
+    /// `list`: a shopping list; `template`: usual items to start lists from; `inbox`: items
+    /// that came without a list (Mealie, the API), to be assigned to lists.
+    #[ts(type = "'list' | 'template' | 'inbox'")]
+    pub kind: String,
     pub name: String,
     pub position: String,
     pub archived_at: Option<String>,
-    /// The shop's default list.
-    pub is_default: bool,
     /// Your relation to the list: what you may do with it.
     #[ts(type = "'owner' | 'editor' | 'viewer'")]
     pub role: String,
-    /// The shop it belongs to (for lists shared with you, the owner's shop).
+    /// The shop it belongs to (for lists shared with you, the owner's shop; empty for the inbox).
     pub shop_name: String,
     /// Who owns it (display name).
     pub owner_name: String,
@@ -195,26 +196,6 @@ pub struct Item {
     #[ts(type = "'manual' | 'staple' | 'mealie' | 'api'")]
     pub source: String,
     pub external_ref: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    #[ts(type = "number")]
-    pub rev: i64,
-}
-
-/// One of a shop's usual purchases (SPEC §6.3).
-#[derive(Debug, Clone, Serialize, FromRow, TS, utoipa::ToSchema)]
-#[ts(export)]
-pub struct Staple {
-    pub id: String,
-    pub shop_id: String,
-    pub catalog_item_id: Option<String>,
-    pub product_id: Option<String>,
-    pub name: String,
-    pub amount: f64,
-    pub unit: Option<String>,
-    /// Added into the list's category of this name, if it has one.
-    pub category_name: Option<String>,
-    pub position: String,
     pub created_at: String,
     pub updated_at: String,
     #[ts(type = "number")]

@@ -149,7 +149,6 @@ pub async fn changed(pool: &SqlitePool, from: i64, to: i64) -> sqlx::Result<Chan
         pool,
         &format!(
             "SELECT owner_id FROM shops WHERE rev > ?1 AND rev <= ?2
-             UNION SELECT p.owner_id FROM staples s JOIN shops p ON p.id = s.shop_id WHERE s.rev > ?1 AND s.rev <= ?2
              UNION SELECT user_id FROM catalog_items WHERE rev > ?1 AND rev <= ?2
              UNION SELECT user_id FROM products WHERE rev > ?1 AND rev <= ?2
              UNION SELECT owner_id FROM persons WHERE rev > ?1 AND rev <= ?2

@@ -11,8 +11,9 @@ Works with Mealie 2 and newer (written against Mealie 3.29).
 2. In ShoppingCart, open **Settings → Mealie**, enter Mealie's address, e.g.
    `http://mealie:9000` (if both run in the same compose network) or
    `https://mealie.example.com`, and the token, and **Connect**.
-3. Then choose which Mealie shopping list to watch and where items should go: a shop (its
-   default list) or a specific list, and **Save**. It switches itself on.
+3. Then choose which Mealie shopping list to watch and where items should go: your
+   [inbox](shopping.md#inbox) (to put each item on a list yourself) or a specific list, and
+   **Save**. It switches itself on.
 4. Optionally let Mealie's **labels** pick the category of the same name, and create it if the
    list doesn't have it yet. Choose what happens in Mealie afterwards: tick the items (the
    default), remove them, or leave them.

@@ -220,3 +220,47 @@ All proposed defaults (Q-1 … Q-10) were accepted by the owner on 2026-10-18.
 - **D-59 · Summary links**: `PUBLIC_URL`, else the address the request came to (forwarded host
   and scheme only with `TRUST_PROXY`). The Streamline provider (6.5) belongs to the Streamline
   repository and its own session.
+
+## Phase 7 (2026-10-18)
+
+- **D-60 · Service worker**: hand-written (no Workbox), generated at build time by a small Vite
+  plugin with the exact file list and a content version; registered only over HTTPS. App shell
+  cache-first, pages network-first with the shell offline, pictures cache-first (they never
+  change for an id; cleared on sign-out), API untouched. A new version waits until the user
+  taps *Reload*, so open pages never lose their lazily loaded files.
+- **D-61 · Offline start**: the last synced data and the user are saved in IndexedDB (debounced
+  after each sync, deleted on sign-out); when `/me` can't reach the server the app starts from
+  that copy in offline mode and catches up when the connection returns.
+- **D-62 · Backups**: `VACUUM INTO data/backups/shoppingcart-<UTC stamp>.db`, made when the newest
+  is about a day old (checked hourly, so also soon after a start), keeping `BACKUP_KEEP` (7);
+  admins list, make and download them from a browser session only. The export is JSON of what
+  you own; claims are left out, and gift lists about you are never yours.
+- **D-63 · Accessibility pass** (audit of all views): field edges get their own 3:1 token,
+  light accent darkened to #14773a (≥ 4.9:1 on all its backgrounds), readable error toasts,
+  toasts and announcements move into the open sheet (the page behind is inert), toasts with an
+  action last ≥ 10 s and pause on hover/focus, Move up/down buttons as the non-drag alternative
+  (WCAG 2.5.7), no actions on select change, focus and title follow navigation, grips describe
+  the keyboard moves.
+- **D-64 · Release**: tags `v*.*.*` build a multi-arch image (amd64 + arm64) by cross-compiling
+  with cargo-zigbuild on the build machine (no emulation), push to GHCR and create a release
+  with the changelog section and a pinned compose file (`deploy/docker-compose.yml`).
+
+## Templates, inbox and Done (owner request, 2026-10-18)
+
+- **D-65 · Templates and the inbox replace staples and default lists**: a list has a `kind`:
+  `list`, `template` (several per shop, on their own Templates tab, edited like a list but not
+  ticked) or `inbox` (one per user, no shop, created on first use). The Shopping tab shows only
+  active lists. A new list starts empty or from a template (its categories and items copied);
+  "Add from template" adds a pre-ticked checklist of the template's items. Items without a list
+  (API `POST /inbox/items`, Mealie without a target list) go to the inbox, where each is
+  assigned to a list; the inbox can't be renamed, moved, deleted or shared. New lists copy
+  categories from their template, else the shop's newest list, else the starter set (D-7).
+  Migration 0007 turns each shop's staples into a template "Usual things" with the default
+  list's categories, then drops `staples` and `default_list_id` use.
+- **D-66 · Ticked items and Done**: ticked items stay on the list, greyed out and struck
+  through at its end (no separate *In the cart* section); a **Done** button next to the list's
+  name finishes the shopping (clears the ticked items, with undo).
+- **D-67 · Table rebuilds in migrations**: sqlx's SQLite migrator always wraps a migration in a
+  transaction (it ignores `-- no-transaction`), where `PRAGMA foreign_keys` has no effect. So
+  `db.rs` runs migrations on one connection with foreign keys off and runs
+  `pragma_foreign_key_check` before switching them back on; startup fails if anything broke.

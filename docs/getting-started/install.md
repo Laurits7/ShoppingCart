@@ -2,7 +2,10 @@
 
 ShoppingCart runs as one Docker container. You need Docker with the Compose plugin.
 
-1. Get the code (or, once releases exist, just the release's `docker-compose.yml`):
+1. Either download the `docker-compose.yml` attached to the latest
+   [release](https://github.com/Laurits7/ShoppingCart/releases) into a new folder and run
+   `mkdir data` there (it uses the prebuilt image for amd64 and arm64), or get the code to
+   build it yourself:
 
     ```sh
     git clone https://github.com/Laurits7/ShoppingCart.git
@@ -19,8 +22,9 @@ ShoppingCart runs as one Docker container. You need Docker with the Compose plug
     docker compose up -d
     ```
 
-    The first build compiles the app and takes a few minutes. On a low-memory device such as a
-    Raspberry Pi, see the build arguments in `docker-compose.yml`.
+    With the prebuilt image this only downloads it. Building from the code takes a few
+    minutes; on a low-memory device such as a Raspberry Pi, see the build arguments in
+    `docker-compose.yml`.
 
 4. Open `http://<server-ip>:3100`. The first visit asks you to create the **admin** account.
    (Or set `INITIAL_ADMIN_USER` and `INITIAL_ADMIN_PASSWORD`, see

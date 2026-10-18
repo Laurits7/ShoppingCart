@@ -11,8 +11,4 @@ color: string | null,
 /**
  * Fractional-index ordering key.
  */
-position: string, 
-/**
- * Where items go when no list is chosen (SPEC §6.2).
- */
-default_list_id: string | null, created_at: string, updated_at: string, rev: number, };
+position: string, created_at: string, updated_at: string, rev: number, };

@@ -37,10 +37,7 @@ async fn with_shop(t: &T) -> (String, String, String) {
         )
         .await;
     let shop = r.json["shop"]["id"].as_str().unwrap().to_string();
-    let list = r.json["shop"]["default_list_id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let list = r.json["lists"][0]["id"].as_str().unwrap().to_string();
     (s, shop, list)
 }
 
@@ -136,7 +133,7 @@ async fn pictures() {
         )
         .await
         .json;
-    let list = shop["shop"]["default_list_id"].as_str().unwrap();
+    let list = shop["lists"][0]["id"].as_str().unwrap();
     let milk = add(&t, &eve, list, json!({"name": "Milk"})).await;
     let entry = milk["item"]["catalog_item_id"].as_str().unwrap();
     let r = t
@@ -302,7 +299,7 @@ async fn products_and_preferences() {
     let r = t
         .req(
             "POST",
-            &format!("/api/v1/shops/{shop}/items"),
+            "/api/v1/inbox/items",
             Some(&tok),
             Some(json!({"text": "Farmi Piim 3.5%"})),
         )
@@ -312,24 +309,36 @@ async fn products_and_preferences() {
     let r = t
         .req(
             "POST",
-            &format!("/api/v1/shops/{shop}/items"),
+            "/api/v1/inbox/items",
             Some(&tok),
             Some(json!({"text": "Farmi milk"})),
         )
         .await;
     assert!(r.json["item"]["product_id"].is_null());
 
-    // Staples can be of a brand.
+    // Template items can be of a brand too.
+    let tmpl = t
+        .req(
+            "POST",
+            "/api/v1/lists",
+            Some(&s),
+            Some(json!({"shop_id": shop, "name": "Weekly", "kind": "template"})),
+        )
+        .await
+        .json["list"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let r = t
         .req(
             "POST",
-            &format!("/api/v1/shops/{shop}/staples"),
+            &format!("/api/v1/lists/{tmpl}/items"),
             Some(&s),
             Some(json!({"name": "Milk", "product_id": alma_id})),
         )
         .await;
-    assert_eq!(r.json["product_id"], alma_id.as_str());
-    let staple = id(&r.json);
+    assert_eq!(r.json["item"]["product_id"], alma_id.as_str());
+    let pinned = id(&r.json["item"]);
 
     // Deleting a product makes what used it generic.
     let r = t
@@ -350,11 +359,11 @@ async fn products_and_preferences() {
             .all(|i| i["product_id"] != alma_id.as_str())
     );
     assert!(
-        data["staples"]
+        data["items"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|x| x["id"] == staple.as_str() && x["product_id"].is_null())
+            .any(|x| x["id"] == pinned.as_str() && x["product_id"].is_null())
     );
     assert!(data["preferences"].as_array().unwrap().is_empty());
 }
@@ -452,7 +461,7 @@ async fn others_cannot_touch_products() {
         )
         .await
         .json;
-    let elist = shop["shop"]["default_list_id"].as_str().unwrap();
+    let elist = shop["lists"][0]["id"].as_str().unwrap();
     let r = t
         .req(
             "POST",

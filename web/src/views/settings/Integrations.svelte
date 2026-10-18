@@ -35,7 +35,7 @@
 
   function edit(i: Integration) {
     form = { ...i.settings }
-    target = i.settings.target_list_id ? `list:${i.settings.target_list_id}` : i.settings.target_shop_id ? `shop:${i.settings.target_shop_id}` : ''
+    target = i.settings.target_list_id ?? ''
     loadLists(i)
   }
 
@@ -55,11 +55,10 @@
     e.preventDefault()
     busy = true
     try {
-      const shop = shopping.sortedShops[0]
       const i = await api.post<Integration>('/integrations', {
         provider: 'mealie',
         secret: token.trim(),
-        settings: { base_url: address.trim(), target_shop_id: shop?.id ?? null, labels_as_categories: true, create_categories: false, after_import: 'check' },
+        settings: { base_url: address.trim(), target_list_id: null, labels_as_categories: true, create_categories: false, after_import: 'check' },
       })
       integrations = [...integrations, i]
       token = ''
@@ -73,19 +72,17 @@
   async function save(e: Event) {
     e.preventDefault()
     if (!mealie || !form) return
-    const [kind, id] = target.split(':')
     const settings: MealieSettings = {
       ...form,
       list_name: lists.find((l) => l.id === form!.list_id)?.name ?? form.list_name,
-      target_shop_id: kind === 'shop' ? id : null,
-      target_list_id: kind === 'list' ? id : null,
+      target_list_id: target || null,
     }
-    const ready = !!settings.list_id && !!target
+    const ready = !!settings.list_id
     try {
       const i = await api.patch<Integration>(`/integrations/${mealie.id}`, { settings, secret: newToken.trim() || undefined, enabled: ready && (mealie.enabled || !mealie.last_sync_at) })
       replace(i)
       newToken = ''
-      toast(ready ? 'Saved' : 'Saved; choose the Mealie list and where items go to switch it on')
+      toast(ready ? 'Saved' : 'Saved; choose the Mealie list to switch it on')
       if (settings.base_url !== mealie.settings.base_url) loadLists(i)
     } catch (err) {
       toast(message(err), 'error')
@@ -147,29 +144,26 @@
     </form>
   {:else if form}
     <p class="small">
-      {#if mealie.last_error}<span class="error">Problem: {mealie.last_error}</span><br />{/if}
+      {#if mealie.last_error}<span class="error" role="status">Problem: {mealie.last_error}</span><br />{/if}
       <span class="muted">Last synced: {when(mealie.last_sync_at)}{mealie.enabled ? ` · next: ${when(mealie.next_run_at)}` : ' · switched off'}</span>
     </p>
     <form class="fields" onsubmit={save}>
       <label class="field wide"><span>Mealie's address</span><input bind:value={form.base_url} required /></label>
       <label class="field wide">
         <span>Mealie list to watch</span>
-        <select bind:value={form.list_id}>
+        <select bind:value={form.list_id} aria-describedby={listsError ? 'mealie-lists-error' : undefined}>
           <option value={null}>Choose…</option>
           {#each lists as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
           {#if form.list_id && !lists.some((l) => l.id === form!.list_id)}<option value={form.list_id}>{form.list_name ?? form.list_id}</option>{/if}
         </select>
-        {#if listsError}<span class="error small">{listsError}</span>{/if}
+        {#if listsError}<span id="mealie-lists-error" class="error small" role="alert">{listsError}</span>{/if}
       </label>
       <label class="field wide">
         <span>Items go to</span>
         <select bind:value={target}>
-          <option value="">Choose…</option>
-          <optgroup label="A shop's default list">
-            {#each shopping.sortedShops as s (s.id)}<option value="shop:{s.id}">{s.name}</option>{/each}
-          </optgroup>
-          <optgroup label="A list">
-            {#each shopping.lists.filter((l) => l.role !== 'viewer' && !l.archived_at) as l (l.id)}<option value="list:{l.id}">{l.shop_name} · {l.name}</option>{/each}
+          <option value="">Your inbox (assign them to lists there)</option>
+          <optgroup label="Or straight to a list">
+            {#each shopping.lists.filter((l) => l.kind === 'list' && l.role !== 'viewer' && !l.archived_at) as l (l.id)}<option value={l.id}>{l.shop_name} · {l.name}</option>{/each}
           </optgroup>
         </select>
       </label>

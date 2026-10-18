@@ -1,7 +1,7 @@
 # Features
 
 ## Shopping
-- Shops, each with one or more lists and one **default list**.
+- Shops, each with one or more lists, and an **inbox** for items that came without a list.
 - **Categories** per list (Dairy, Meat, Vegetables…), collapsible, reorderable.
 - **Drag and drop** for items, categories, lists and shops, with mouse, touch or keyboard.
 - **Quick add** with instant suggestions from your **item catalogue** (everything you've
@@ -11,8 +11,8 @@
   from Open Food Facts or your own photo; a preferred brand per item or per shop; barcode
   scanning over HTTPS.
 - **−/+ buttons** on every item to change the amount, with steps that fit the unit.
-- Tick items into **In the cart**; **Finish shopping** clears them (with undo).
-- **Staples** per shop: add your usual items in one tap.
+- Ticked items are greyed out at the end of the list; **Done** clears them (with undo).
+- **Templates** per shop (several, on their own tab): start a list from one or add its items in one tap.
 - Move items between lists and shops.
 
 ## Wishlists
@@ -32,6 +32,6 @@
 - Installable as a phone app over HTTPS (PWA); light and dark theme.
 
 ## Integrations
-- [Mealie](guides/mealie.md): its shopping list flows into a shop's list.
+- [Mealie](guides/mealie.md): its shopping list flows into your inbox or a list.
 - [Streamline](guides/streamline.md): a "Go shopping" task while a list has items.
 - A documented [API](api.md) with tokens for anything else (Home Assistant, shortcuts, scripts).

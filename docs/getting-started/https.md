@@ -8,6 +8,13 @@ ShoppingCart works over plain HTTP on your home network. Over **HTTPS** it also:
 
 Put it behind any reverse proxy and set `TRUST_PROXY: "true"` (and `PUBLIC_URL`).
 
+To install it: in Chrome or Edge, **Settings → Install the app** (or the install icon in the
+address bar); on iPhone and iPad, Safari's **Share → Add to Home Screen**. When a new version
+of ShoppingCart is running, the app offers **Reload** to switch to it.
+
+Without a connection the app also opens with your lists as they were last synced (saved on
+the device, deleted when you sign out), and changes are sent when the connection is back.
+
 === "Caddy"
 
     ```caddy

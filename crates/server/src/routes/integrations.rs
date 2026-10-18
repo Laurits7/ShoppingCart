@@ -50,11 +50,6 @@ async fn check(
             .await
             .map_err(|_| bad("you can't add to that list"))?;
     }
-    if let Some(shop) = &s.target_shop_id {
-        visibility::require_shop(&mut conn, user, shop)
-            .await
-            .map_err(|_| bad("no such shop"))?;
-    }
     Ok(s)
 }
 

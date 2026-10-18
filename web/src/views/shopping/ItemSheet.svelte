@@ -2,6 +2,7 @@
   import { COMMON_UNITS, defaultStep, normalizeUnit } from '../../lib/amount'
   import type { Item } from '../../lib/api/types/Item'
   import Sheet from '../../lib/components/Sheet.svelte'
+  import UpDown from '../../lib/components/UpDown.svelte'
   import { shopping } from '../../lib/shopping.svelte'
   import { toast } from '../../lib/toast.svelte'
   import MoveSheet from './MoveSheet.svelte'
@@ -27,6 +28,9 @@
   })
 
   const categories = $derived(item ? shopping.categoriesOf(item.list_id) : [])
+  // Its place among the open items of its category, for moving without dragging.
+  const section = $derived(item && !item.checked_at ? shopping.sections(item.list_id).find((s) => s.items.some((i) => i.id === item!.id)) : undefined)
+  const place = $derived(section && item ? section.items.findIndex((i) => i.id === item!.id) : -1)
   const num = (s: string) => Number(s.trim().replace(',', '.'))
 
   function save(e: Event) {
@@ -51,18 +55,9 @@
     open = false
   }
 
-  function makeStaple() {
-    if (!item) return
-    const shopId = shopping.list(item.list_id)?.shop_id
-    if (!shopId) return
-    if (shopping.staplesOf(shopId).some((s) => s.name.toLowerCase() === item!.name.toLowerCase())) {
-      toast(`${item.name} is already a staple`)
-      return
-    }
-    const cat = shopping.categories.find((c) => c.id === item!.category_id)?.name ?? null
-    shopping.createStaple(shopId, { name: item.name, amount: item.amount, unit: item.unit, category_name: cat, product_id: item.product_id })
-    toast(`${item.name} is now a staple of ${shopping.shop(shopId)?.name ?? 'this shop'}`)
-  }
+  // Put this item into one of the shop's templates too.
+  let toTemplate = $state('')
+  const templates = $derived(item ? shopping.templatesOf(shopping.list(item.list_id)?.shop_id ?? '').filter((t) => t.id !== item!.list_id) : [])
 
   let moveOpen = $state(false)
   let brandOpen = $state(false)
@@ -91,10 +86,33 @@
       </label>
       <label class="field"><span>−/+ step</span><input bind:value={step} inputmode="decimal" placeholder={String(defaultStep(normalizeUnit(unit)))} /></label>
       <label class="field wide"><span>Note</span><textarea bind:value={note} maxlength="1000"></textarea></label>
+      {#if section && item && section.items.length > 1}
+        <div class="field wide order">
+          <span>Order in {section.name}</span>
+          <UpDown what={item.name} index={place} count={section.items.length} onmove={(to) => shopping.moveItem(item!, item!.list_id, section!.id === 'other' ? null : section!.id, to)} />
+        </div>
+      {/if}
       <div class="actions wide">
         <button class="btn primary" type="submit">Save</button>
         {#if entry}<button class="btn" type="button" onclick={() => ((open = false), (brandOpen = true))}>Brand…</button>{/if}
-        <button class="btn" type="button" onclick={makeStaple}>Make staple</button>
+        {#if templates.length}
+          <span class="to-template">
+            <select bind:value={toTemplate} aria-label="Add to a template">
+              <option value="">Add to template…</option>
+              {#each templates as t (t.id)}<option value={t.id}>{t.name}</option>{/each}
+            </select>
+            <button
+              class="btn"
+              type="button"
+              disabled={!toTemplate}
+              onclick={() => {
+                const t = shopping.list(toTemplate)
+                if (t && item) shopping.addToTemplate(item, t)
+                toTemplate = ''
+              }}>Add</button
+            >
+          </span>
+        {/if}
         {#if otherLists}<button class="btn" type="button" onclick={() => ((open = false), (moveOpen = true))}>Move to…</button>{/if}
         <span class="spacer"></span>
         <button class="btn danger" type="button" onclick={remove}>Delete</button>
@@ -111,3 +129,18 @@
     <m.default bind:open={brandOpen} catalogId={entry.id} {item} shopId={shopping.list(item.list_id)?.shop_id ?? null} />
   {/await}
 {/if}
+
+<style>
+  .to-template {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .to-template select {
+    width: auto;
+  }
+  .order {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+</style>

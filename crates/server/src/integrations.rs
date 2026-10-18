@@ -42,10 +42,7 @@ pub struct MealieSettings {
     pub list_id: Option<String>,
     #[serde(default)]
     pub list_name: Option<String>,
-    /// Items go to this shop's default list…
-    #[serde(default)]
-    pub target_shop_id: Option<String>,
-    /// …or to this list.
+    /// Items go to this list; without one, to your inbox (to assign them to lists there).
     #[serde(default)]
     pub target_list_id: Option<String>,
     /// A Mealie label puts the item into the category of the same name.
@@ -193,31 +190,23 @@ pub async fn run(state: &AppState, id: &str) -> anyhow::Result<Outcome> {
     })
 }
 
-/// The list Mealie items go to, if the owner may still add to it.
+/// The list Mealie items go to (the owner's inbox unless a list is chosen), if the owner may
+/// still add to it.
 async fn target_list(
     conn: &mut SqliteConnection,
     owner: &str,
     s: &MealieSettings,
 ) -> Result<String, String> {
-    let list = match (&s.target_list_id, &s.target_shop_id) {
-        (Some(l), _) => Some(l.clone()),
-        (None, Some(shop)) => sqlx::query_scalar::<_, Option<String>>(
-            "SELECT default_list_id FROM shops WHERE id = ? AND owner_id = ? AND deleted_at IS NULL",
-        )
-        .bind(shop)
-        .bind(owner)
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(|e| e.to_string())?
-        .flatten(),
-        (None, None) => return Err("choose where Mealie's items should go".into()),
+    let Some(list) = &s.target_list_id else {
+        return crate::routes::shops::inbox_id(conn, owner)
+            .await
+            .map_err(|e| e.to_string());
     };
-    let list = list.ok_or("the shop or list Mealie's items go to is gone")?;
-    let role = visibility::list_role(conn, owner, &list)
+    let role = visibility::list_role(conn, owner, list)
         .await
         .map_err(|e| e.to_string())?;
     match role {
-        Some(r) if shoppingcart_domain::visibility::allows(r, Need::EditItems) => Ok(list),
+        Some(r) if shoppingcart_domain::visibility::allows(r, Need::EditItems) => Ok(list.clone()),
         _ => Err("you can no longer add to the list Mealie's items go to".into()),
     }
 }
@@ -271,7 +260,8 @@ async fn run_mealie(state: &AppState, row: &Row, imported: &mut i64) -> Result<(
         .clone()
         .ok_or("choose which Mealie list to watch")?;
     let target = {
-        let mut conn = state.db.read.acquire().await.map_err(|e| e.to_string())?;
+        // The inbox may need creating, so this uses the writer.
+        let mut conn = state.db.write.acquire().await.map_err(|e| e.to_string())?;
         target_list(&mut conn, &row.owner_id, &s).await?
     };
     let m = Mealie {

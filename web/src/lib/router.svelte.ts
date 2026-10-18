@@ -29,6 +29,7 @@ document.addEventListener('click', (e) => {
 
 export type Route =
   | { name: 'shopping'; listId?: string }
+  | { name: 'templates' }
   | { name: 'wishlist'; wishlistId?: string }
   | { name: 'settings'; page?: 'catalog' }
   | { name: 'notfound' }
@@ -38,6 +39,7 @@ export function match(path: string): Route {
   if (p === '/' || p === '/shopping') return { name: 'shopping' }
   const list = /^\/list\/([0-9A-Za-z]{26})$/.exec(p)
   if (list) return { name: 'shopping', listId: list[1].toUpperCase() }
+  if (p === '/templates') return { name: 'templates' }
   if (p === '/wishlist') return { name: 'wishlist' }
   const wl = /^\/wishlist\/([0-9A-Za-z]{26})$/.exec(p)
   if (wl) return { name: 'wishlist', wishlistId: wl[1].toUpperCase() }

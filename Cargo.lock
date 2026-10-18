@@ -2010,7 +2010,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "shoppingcart"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -2045,7 +2045,7 @@ dependencies = [
 
 [[package]]
 name = "shoppingcart-domain"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "signal-hook-registry"

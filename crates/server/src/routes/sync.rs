@@ -23,7 +23,7 @@ use tokio_stream::{
 };
 use ts_rs::TS;
 
-use super::{catalog, items, products, shops, staples, wishes};
+use super::{catalog, items, products, shops, wishes};
 use crate::{
     AppState,
     auth::AuthUser,
@@ -31,7 +31,7 @@ use crate::{
     events,
     models::{
         CatalogItem, Category, Claim, Image, Item, Person, Product, ProductPreference, Shop,
-        ShoppingList, Staple, WishItem, WishSection, Wishlist,
+        ShoppingList, WishItem, WishSection, Wishlist,
     },
     util::random_token,
     visibility::VISIBLE_LISTS,
@@ -42,7 +42,7 @@ use crate::{
 #[ts(export)]
 pub struct Deleted {
     #[ts(
-        type = "'shop' | 'list' | 'category' | 'item' | 'staple' | 'catalog' | 'product' | 'person' | 'wishlist' | 'wish_section' | 'wish_item' | 'claim'"
+        type = "'shop' | 'list' | 'category' | 'item' | 'catalog' | 'product' | 'person' | 'wishlist' | 'wish_section' | 'wish_item' | 'claim'"
     )]
     pub kind: String,
     pub id: String,
@@ -59,7 +59,6 @@ pub struct ShoppingData {
     pub lists: Vec<ShoppingList>,
     pub categories: Vec<Category>,
     pub items: Vec<Item>,
-    pub staples: Vec<Staple>,
     pub catalog: Vec<CatalogItem>,
     /// Your products, and others' products pinned on lists you see.
     pub products: Vec<Product>,
@@ -92,8 +91,6 @@ async fn deleted(conn: &mut SqliteConnection, uid: &str, since: i64) -> sqlx::Re
                WHERE c.deleted_at IS NOT NULL AND c.rev > ?2 AND ({VISIBLE_LISTS} OR l.owner_id = ?1)
          UNION ALL SELECT 'item', i.id FROM items i JOIN lists l ON l.id = i.list_id
                WHERE i.deleted_at IS NOT NULL AND i.rev > ?2 AND ({VISIBLE_LISTS} OR l.owner_id = ?1)
-         UNION ALL SELECT 'staple', s.id FROM staples s JOIN shops p ON p.id = s.shop_id
-               WHERE p.owner_id = ?1 AND s.deleted_at IS NOT NULL AND s.rev > ?2
          UNION ALL SELECT 'catalog', id FROM catalog_items WHERE user_id = ?1 AND deleted_at IS NOT NULL AND rev > ?2
          UNION ALL SELECT 'product', id FROM products WHERE user_id = ?1 AND deleted_at IS NOT NULL AND rev > ?2"
     ))
@@ -134,7 +131,6 @@ async fn load(state: &AppState, uid: &str, since: i64) -> ApiResult<ShoppingData
         lists: shops::visible_lists(&mut conn, uid, None, since).await?,
         categories: items::visible_categories(&mut conn, uid, None, since).await?,
         items: items::visible_items(&mut conn, uid, None, since).await?,
-        staples: staples::user_staples(&mut conn, uid, None, since).await?,
         catalog: catalog::since(&mut conn, uid, since).await?,
         products: products::synced_products(&mut conn, uid, since).await?,
         preferences: products::user_preferences(&mut conn, uid, None).await?,

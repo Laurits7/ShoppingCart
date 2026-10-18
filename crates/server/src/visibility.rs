@@ -3,7 +3,7 @@
 //! user may not see is a 404, so its existence never leaks.
 //!
 //! A list is visible to its owner and to everyone it is shared with, directly or through a
-//! household they are a member of now (SPEC §6.8). Shops, staples, the catalogue and products
+//! household they are a member of now (SPEC §6.8). Shops, the catalogue and products
 //! are personal. What each role allows lives in `shoppingcart_domain::visibility`.
 
 use shoppingcart_domain::visibility::{self as rules};
@@ -338,22 +338,6 @@ pub async fn require_shop(
     .fetch_optional(&mut *conn)
     .await?;
     ok.map(|_| ()).ok_or(AppError::NotFound)
-}
-
-/// The shop of a live staple of one of the user's shops.
-pub async fn require_staple(
-    conn: &mut SqliteConnection,
-    user: &AuthUser,
-    staple_id: &str,
-) -> ApiResult<String> {
-    let shop_id: Option<String> =
-        sqlx::query_scalar("SELECT shop_id FROM staples WHERE id = ? AND deleted_at IS NULL")
-            .bind(staple_id)
-            .fetch_optional(&mut *conn)
-            .await?;
-    let shop_id = shop_id.ok_or(AppError::NotFound)?;
-    require_shop(conn, user, &shop_id).await?;
-    Ok(shop_id)
 }
 
 /// A live product of the user's own; returns its catalogue item.

@@ -17,6 +17,7 @@ Everything is optional. Set variables in the `environment:` section of `docker-c
 | `PUID`, `PGID` | `1000` | (Compose only) The user and group the container runs as; should own `./data`. |
 | `PRODUCT_LOOKUP` | `openfoodfacts` | Where product pictures and brands are looked up. `off` disables it; nothing then leaves your server. |
 | `MAX_UPLOAD_MB` | `8` | Largest picture you can upload. |
+| `BACKUP_KEEP` | `7` | Nightly database backups to keep in `data/backups/`; `0` switches them off. |
 
 The container runs as `PUID:PGID` (not root), with a read-only filesystem, no Linux
 capabilities and `no-new-privileges`; only `./data` is writable.

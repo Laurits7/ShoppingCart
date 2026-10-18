@@ -1,4 +1,4 @@
-// Client-side copy of the Shopping tab: shops, lists, categories, items, staples, the item
+// Client-side copy of the Shopping tab: shops, lists, templates, the inbox, categories, items, the item
 // catalogue and products. Changes are applied here first (instant UI). Item and category
 // changes go through the outbox (sent in order, kept across a dead zone); shop, list,
 // catalogue and product changes need the connection. Other devices' changes arrive by
@@ -19,8 +19,8 @@ import type { Shop } from './api/types/Shop'
 import type { ShopBundle } from './api/types/ShopBundle'
 import type { ShoppingData } from './api/types/ShoppingData'
 import { IdbStore, MemoryStore, Outbox, type Entry } from './outbox.svelte'
+import { saveSnapshot } from './snapshot'
 import type { ShoppingList } from './api/types/ShoppingList'
-import type { Staple } from './api/types/Staple'
 import { combine, formatAmount, step as stepAmount } from './amount'
 import { frequent as rankFrequent, normalizeName, rank, type Usage } from './catalog'
 import { neighbours } from './dndmath'
@@ -66,7 +66,6 @@ class ShoppingStore {
   lists = $state<ShoppingList[]>([])
   categories = $state<Category[]>([])
   items = $state<Item[]>([])
-  staples = $state<Staple[]>([])
   catalog = $state<CatalogItem[]>([])
   products = $state<Product[]>([])
   preferences = $state<ProductPreference[]>([])
@@ -96,7 +95,6 @@ class ShoppingStore {
     this.lists = []
     this.categories = []
     this.items = []
-    this.staples = []
     this.catalog = []
     this.products = []
     this.preferences = []
@@ -104,7 +102,11 @@ class ShoppingStore {
   }
 
   async load() {
-    const d = await api.get<ShoppingData>('/sync?since=0')
+    this.apply(await api.get<ShoppingData>('/sync?since=0'))
+  }
+
+  /** Take a full copy of the data (from the server, or the saved copy when offline). */
+  apply(d: ShoppingData) {
     // Changes still waiting in the outbox stay as they are locally.
     const waiting = this.outbox.keys()
     const keep = <T extends { id: string }>(fresh: T[], old: T[]) => [...fresh.filter((r) => !waiting.has(r.id)), ...old.filter((r) => waiting.has(r.id))]
@@ -114,12 +116,12 @@ class ShoppingStore {
     this.categories = keep(d.categories, this.categories)
     this.items = keep(d.items, this.items)
     wishes.apply(d, true, waiting)
-    this.staples = d.staples
     this.catalog = d.catalog
     this.products = d.products
     this.preferences = d.preferences
     this.images = d.images
     this.loaded = true
+    this.#save()
   }
 
   /** Catch up with changes made elsewhere since the last sync. */
@@ -158,7 +160,6 @@ class ShoppingStore {
     merge(this.lists, d.lists)
     merge(this.categories, d.categories)
     merge(this.items, d.items)
-    merge(this.staples, d.staples)
     merge(this.catalog, d.catalog)
     merge(this.products, d.products)
     this.preferences = d.preferences
@@ -170,7 +171,6 @@ class ShoppingStore {
     drop(this.lists, 'list')
     drop(this.categories, 'category')
     drop(this.items, 'item')
-    drop(this.staples, 'staple')
     drop(this.catalog, 'catalog')
     drop(this.products, 'product')
     // Lists I can no longer see (unshared, left, deleted) go, with everything on them.
@@ -182,6 +182,37 @@ class ShoppingStore {
       removeWhere(this.lists, (l) => lost.has(l.id))
     }
     this.rev = d.rev
+    this.#save()
+  }
+
+  #saveTimer: ReturnType<typeof setTimeout> | undefined
+  /** Keep a copy on the device, a moment after the last sync (it's what opens offline). */
+  #save() {
+    clearTimeout(this.#saveTimer)
+    this.#saveTimer = setTimeout(() => {
+      const me = session.me
+      if (!me || !this.loaded) return
+      const data: ShoppingData = $state.snapshot({
+        rev: this.rev,
+        shops: this.shops,
+        lists: this.lists,
+        categories: this.categories,
+        items: this.items,
+        catalog: this.catalog,
+        products: this.products,
+        preferences: this.preferences,
+        images: this.images,
+        persons: wishes.persons,
+        wishlists: wishes.wishlists,
+        wish_sections: wishes.sections,
+        wish_items: wishes.items,
+        claims: wishes.claims,
+        deleted: [],
+        visible_lists: this.lists.map((l) => l.id),
+        visible_wishlists: wishes.wishlists.map((w) => w.id),
+      })
+      saveSnapshot({ me: $state.snapshot(me), data, saved_at: new Date().toISOString() })
+    }, 1500)
   }
 
   /** Queue a change; `apply` gets the server's answer unless a newer change to the same
@@ -219,8 +250,21 @@ class ShoppingStore {
   list(id: string | null | undefined) {
     return this.lists.find((l) => l.id === id)
   }
+  /** A shop's shopping lists (not templates). */
   listsOf(shopId: string, archived = false) {
-    return this.lists.filter((l) => l.shop_id === shopId && !!l.archived_at === archived).sort(byPosition)
+    return this.lists.filter((l) => l.kind === 'list' && l.shop_id === shopId && !!l.archived_at === archived).sort(byPosition)
+  }
+  /** A shop's templates: usual items to start lists from. */
+  templatesOf(shopId: string) {
+    return this.lists.filter((l) => l.kind === 'template' && l.shop_id === shopId && !l.archived_at).sort(byPosition)
+  }
+  /** Templates you can see, also shared ones (whatever their shop). */
+  get templates() {
+    return this.lists.filter((l) => l.kind === 'template' && !l.archived_at)
+  }
+  /** Where items without a list arrive (Mealie, the API), if it exists yet. */
+  get inbox() {
+    return this.lists.find((l) => l.kind === 'inbox')
   }
   categoriesOf(listId: string) {
     return this.categories.filter((c) => c.list_id === listId).sort(byPosition)
@@ -248,9 +292,6 @@ class ShoppingStore {
     return this.itemsOf(listId)
       .filter((i) => i.checked_at)
       .sort((a, b) => (b.checked_at! < a.checked_at! ? -1 : b.checked_at! > a.checked_at! ? 1 : 0))
-  }
-  staplesOf(shopId: string) {
-    return this.staples.filter((s) => s.shop_id === shopId).sort(byPosition)
   }
   known(name: string) {
     const n = normalizeName(name)
@@ -313,7 +354,6 @@ class ShoppingStore {
     removeWhere(this.products, (x) => x.id === p.id)
     removeWhere(this.preferences, (x) => x.product_id === p.id)
     for (const i of this.items) if (i.product_id === p.id) i.product_id = null
-    for (const s of this.staples) if (s.product_id === p.id) s.product_id = null
     await this.#send(() => api.del(`/products/${p.id}`))
   }
 
@@ -577,15 +617,20 @@ class ShoppingStore {
     this.#queue<Finished>({ method: 'POST', path: `/lists/${listId}/finish`, body: {} })
   }
 
-  // ---- staples ---------------------------------------------------------------------------
+  // ---- templates and the inbox --------------------------------------------------------------
 
-  addStaples(listId: string, staples: Staple[]) {
-    const sent = staples.map((s) => {
-      const r = this.#applyAdd(listId, { name: s.name, amount: s.amount, unit: s.unit, categoryId: this.#categoryNamed(listId, s.category_name), productId: s.product_id })
-      return { staple_id: s.id, id: r.id }
+  /** Add a template's items (all, or some) to a list; ones already open get the amount added. */
+  addFromTemplate(listId: string, template: ShoppingList, itemIds?: string[]) {
+    const from = this.itemsOf(template.id).filter((i) => !itemIds || itemIds.includes(i.id)).sort(byPosition)
+    const sent = from.map((t) => {
+      const cat = this.categories.find((c) => c.id === t.category_id)?.name ?? null
+      const r = this.#applyAdd(listId, { name: t.name, amount: t.amount, unit: t.unit, categoryId: this.#categoryNamed(listId, cat), productId: t.product_id })
+      return { item_id: t.id, id: r.id }
     })
-    if (staples.length) toast(`Added ${staples.length} staple${staples.length === 1 ? '' : 's'}`)
-    this.#queue<AddedItem[]>({ method: 'POST', path: `/lists/${listId}/staples`, body: { staples: sent } }, (res) => res.forEach((r, i) => this.#applyAdded(sent[i].id, r)))
+    if (sent.length) toast(`Added ${sent.length} item${sent.length === 1 ? '' : 's'} from ${template.name}`)
+    this.#queue<AddedItem[]>({ method: 'POST', path: `/lists/${listId}/from-template`, body: { template_id: template.id, items: sent } }, (res) =>
+      res.forEach((r, i) => this.#applyAdded(sent[i].id, r)),
+    )
   }
 
   /** The list's category of that name: undefined (let the catalogue decide) if none given. */
@@ -595,23 +640,19 @@ class ShoppingStore {
     return this.categoriesOf(listId).find((c) => normalizeName(c.name) === want)?.id
   }
 
-  async createStaple(shopId: string, s: { name: string; amount: number; unit: string | null; category_name: string | null; product_id?: string | null }) {
-    const id = ulid()
-    const ts = now()
-    this.staples.push({ id, shop_id: shopId, catalog_item_id: null, ...s, product_id: s.product_id ?? null, position: keyBetween(lastKey(this.staplesOf(shopId)), null), created_at: ts, updated_at: ts, rev: 0 })
-    const res = await this.#send(() => api.post<Staple>(`/shops/${shopId}/staples`, { id, ...s, unit: s.unit ?? '' }))
-    if (res) upsert(this.staples, res)
+  /** Put an item into a template too (e.g. from a list), in its category of the same name. */
+  addToTemplate(item: Item, template: ShoppingList) {
+    const cat = this.categories.find((c) => c.id === item.category_id)?.name ?? null
+    this.add(template.id, { name: item.name, amount: item.amount, unit: item.unit, categoryId: this.#categoryNamed(template.id, cat) ?? null, productId: item.product_id })
+    toast(`${item.name} is now in ${template.name}`)
   }
 
-  async patchStaple(s: Staple, patch: { name?: string; amount?: number; unit?: string | null; category_name?: string | null }) {
-    Object.assign(s, patch)
-    const res = await this.#send(() => api.patch<Staple>(`/staples/${s.id}`, patch))
-    if (res) upsert(this.staples, res)
-  }
-
-  deleteStaple(s: Staple) {
-    removeWhere(this.staples, (x) => x.id === s.id)
-    this.#send(() => api.del(`/staples/${s.id}`))
+  /** Add to the inbox (created on first use). */
+  async addToInbox(text: string) {
+    const res = await this.#send(() => api.post<AddedItem>('/inbox/items', { id: ulid(), text }))
+    if (!res) return
+    if (!this.inbox) await this.load()
+    else upsert(this.items, res.item)
   }
 
   // ---- shops, lists, categories ------------------------------------------------------------
@@ -627,7 +668,7 @@ class ShoppingStore {
     if (!res) return undefined
     upsert(this.shops, res.shop)
     this.#applyBundle(res)
-    return res.shop.default_list_id ?? undefined
+    return res.lists[0]?.id
   }
 
   async patchShop(shop: Shop, patch: { name?: string; color?: string | null }) {
@@ -641,28 +682,22 @@ class ShoppingStore {
     removeWhere(this.items, (i) => lists.has(i.list_id))
     removeWhere(this.categories, (c) => lists.has(c.list_id))
     removeWhere(this.lists, (l) => lists.has(l.id))
-    removeWhere(this.staples, (s) => s.shop_id === shop.id)
     removeWhere(this.shops, (s) => s.id === shop.id)
     for (const c of this.catalog) removeWhere(c.shops, (u) => u.shop_id === shop.id)
     await this.#send(() => api.del(`/shops/${shop.id}`))
   }
 
-  async createList(shopId: string, name: string): Promise<string | undefined> {
-    const res = await this.#send(() => api.post<ListBundle>('/lists', { id: ulid(), shop_id: shopId, name }))
+  /** A new list (empty, or a copy of a template) or a new template; returns its id. */
+  async createList(shopId: string, name: string, opts: { kind?: 'list' | 'template'; templateId?: string | null } = {}): Promise<string | undefined> {
+    const res = await this.#send(() => api.post<ListBundle>('/lists', { id: ulid(), shop_id: shopId, name, kind: opts.kind ?? 'list', template_id: opts.templateId ?? null }))
     if (!res) return undefined
     this.#applyBundle({ lists: [res.list], categories: res.categories })
     return res.list.id
   }
 
-  async patchList(list: ShoppingList, patch: { name?: string; archived?: boolean; is_default?: boolean }) {
+  async patchList(list: ShoppingList, patch: { name?: string; archived?: boolean }) {
     const res = await this.#send(() => api.patch<ShoppingList>(`/lists/${list.id}`, patch))
-    if (!res) return
-    if (patch.is_default) {
-      for (const l of this.lists) if (l.shop_id === res.shop_id) l.is_default = false
-      const shop = this.shop(res.shop_id)
-      if (shop) shop.default_list_id = res.id
-    }
-    upsert(this.lists, res)
+    if (res) upsert(this.lists, res)
   }
 
   async deleteList(list: ShoppingList) {
@@ -766,13 +801,11 @@ class ShoppingStore {
     this.#queue<Category>({ method: 'POST', path: `/categories/${c.id}/move`, body: place, key: c.id }, (res) => upsert(this.categories, res))
   }
   moveList(l: ShoppingList, index: number) {
-    return this.#move(this.lists, l, this.listsOf(l.shop_id), index, `/lists/${l.id}/move`)
+    const siblings = l.kind === 'template' ? this.templatesOf(l.shop_id ?? '') : this.listsOf(l.shop_id ?? '')
+    return this.#move(this.lists, l, siblings, index, `/lists/${l.id}/move`)
   }
   moveShop(s: Shop, index: number) {
     return this.#move(this.shops, s, this.sortedShops, index, `/shops/${s.id}/move`)
-  }
-  moveStaple(s: Staple, index: number) {
-    return this.#move(this.staples, s, this.staplesOf(s.shop_id), index, `/staples/${s.id}/move`)
   }
 
   // ---- catalogue management ------------------------------------------------------------------

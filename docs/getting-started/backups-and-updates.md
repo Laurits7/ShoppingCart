@@ -2,22 +2,33 @@
 
 ## Backups
 
-All data is in `./data`: `shoppingcart.db` (SQLite), `secret.key` and the `images/` folder
-with product pictures. To back up, either:
+All data is in `./data`: `shoppingcart.db` (SQLite), `secret.key` (which encrypts stored
+integration tokens) and the `images/` folder with product pictures.
 
-- stop the container and copy the folder, or
-- copy it while running with SQLite's own tool:
-  `sqlite3 data/shoppingcart.db ".backup 'backup.db'"`, plus `secret.key` and `images/`.
+- **Nightly backups**: every night a consistent copy of the database is written to
+  `data/backups/` and the last 7 are kept (`BACKUP_KEEP`, 0 switches this off). Admins see
+  them in **Settings → Backups**, can make one now and download them.
+- **Off the machine**: copy the whole `data` folder somewhere else regularly (it includes
+  `backups/`, `images/` and `secret.key`). The newest file in `backups/` is safe to copy while
+  ShoppingCart runs.
+- **Your own data**: anyone can download what's theirs (shops, lists, templates, catalogue,
+  brands, wishlists and gift lists) as JSON in **Settings → Your data**.
 
-!!! note "Planned"
-    Automatic nightly backups in `data/backups/` and a download button for admins come in
-    Phase 7 of the work plan.
+To restore, stop the container, put a backup in place of `data/shoppingcart.db` (remove any
+`shoppingcart.db-wal` and `-shm` next to it) and start it again.
 
 ## Updates
 
+With the prebuilt image:
+
 ```sh
-git pull            # or download the new release's docker-compose.yml
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-Database migrations run automatically on start. Take a backup first.
+(Or put the new release's version in `image:` first.) Building from the code:
+`git pull && docker compose up -d --build`.
+
+Database migrations run automatically on start. Make a backup first (**Settings → Backups →
+Back up now**). What changed is in the
+[changelog](https://github.com/Laurits7/ShoppingCart/blob/main/CHANGELOG.md).

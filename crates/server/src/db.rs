@@ -25,7 +25,25 @@ impl Db {
             .max_connections(1)
             .connect_with(opts.clone())
             .await?;
-        sqlx::migrate!("../../migrations").run(&write).await?;
+        // Rebuilding a table (as SQLite needs for some changes) requires foreign keys off
+        // while migrating; they are checked before going on.
+        {
+            let mut conn = write.acquire().await?;
+            sqlx::query("PRAGMA foreign_keys = OFF")
+                .execute(&mut *conn)
+                .await?;
+            sqlx::migrate!("../../migrations").run(&mut *conn).await?;
+            let broken: Vec<(String,)> =
+                sqlx::query_as("SELECT \"table\" FROM pragma_foreign_key_check")
+                    .fetch_all(&mut *conn)
+                    .await?;
+            if !broken.is_empty() {
+                anyhow::bail!("database references are broken after migrating: {broken:?}");
+            }
+            sqlx::query("PRAGMA foreign_keys = ON")
+                .execute(&mut *conn)
+                .await?;
+        }
         let read = SqlitePoolOptions::new()
             .max_connections(4)
             .connect_with(opts.read_only(true))
@@ -70,15 +88,13 @@ pub async fn purge(pool: &SqlitePool) -> sqlx::Result<()> {
     for sql in [
         "DELETE FROM items WHERE deleted_at < ?1",
         "DELETE FROM categories WHERE deleted_at < ?1",
-        "DELETE FROM staples WHERE deleted_at < ?1",
         "DELETE FROM product_preferences WHERE product_id IN (SELECT id FROM products WHERE deleted_at < ?1)",
         "UPDATE items SET product_id = NULL WHERE product_id IN (SELECT id FROM products WHERE deleted_at < ?1)",
-        "UPDATE staples SET product_id = NULL WHERE product_id IN (SELECT id FROM products WHERE deleted_at < ?1)",
         "DELETE FROM products WHERE deleted_at < ?1",
         "DELETE FROM catalog_shop_uses WHERE catalog_item_id IN (SELECT id FROM catalog_items WHERE deleted_at < ?1)",
         "DELETE FROM catalog_items WHERE deleted_at < ?1",
         "DELETE FROM lists WHERE deleted_at < ?1 AND id NOT IN (SELECT list_id FROM items) AND id NOT IN (SELECT list_id FROM categories)",
-        "DELETE FROM shops WHERE deleted_at < ?1 AND id NOT IN (SELECT shop_id FROM lists) AND id NOT IN (SELECT shop_id FROM staples)",
+        "DELETE FROM shops WHERE deleted_at < ?1 AND id NOT IN (SELECT shop_id FROM lists WHERE shop_id IS NOT NULL)",
         "DELETE FROM claims WHERE deleted_at < ?1 OR wish_item_id IN (SELECT id FROM wish_items WHERE deleted_at < ?1)",
         "DELETE FROM wish_items WHERE deleted_at < ?1",
         "DELETE FROM wish_sections WHERE deleted_at < ?1",

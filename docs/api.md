@@ -26,18 +26,17 @@ curl -H "Authorization: Bearer sc_…" http://cart.local:3100/api/v1/summary
 | `GET/POST /users`, `PATCH/DELETE /users/{id}` | User management (admins) |
 | `GET/POST /households`, `PATCH/DELETE /households/{id}` | Households |
 | `POST /households/{id}/members`, `PATCH/DELETE /households/{id}/members/{user_id}` | Members, roles, leaving |
-| `GET /shopping` | Everything on the Shopping tab in one go: shops, lists, categories, items, staples, catalogue |
-| `GET/POST /shops`, `PATCH/DELETE /shops/{id}` | Shops; creating one also creates its default list |
-| `POST /shops/{id}/items` | Add an item to the shop's **default list** (handy for shortcuts and Home Assistant) |
-| `GET/POST /lists`, `GET/PATCH/DELETE /lists/{id}` | Lists. `PATCH {"is_default": true}` makes a list the default, `{"archived": true}` archives it |
+| `GET /shopping` | Everything on the Shopping tab in one go: shops, lists (also templates and your inbox), categories, items, catalogue |
+| `GET/POST /shops`, `PATCH/DELETE /shops/{id}` | Shops; creating one also creates its first list |
+| `POST /inbox/items` | Add an item to your **inbox**, to be put on a list later (handy for shortcuts and Home Assistant) |
+| `GET/POST /lists`, `GET/PATCH/DELETE /lists/{id}` | Lists. Each has a `kind`: `list`, `template` or `inbox`. Post `{"shop_id": "…", "name": "…", "kind": "template"}` for a template, `"template_id": "…"` to start a list with a template's items; `PATCH {"archived": true}` archives |
 | `GET/POST /lists/{id}/categories`, `PATCH/DELETE /categories/{id}` | Categories (deleting one moves its items to *Other*) |
 | `GET/POST /lists/{id}/items` | Items. Post `{"text": "flour 1 kg"}` or `{"name": "flour", "amount": 1, "unit": "kg"}`; a name already open on the list gets the amount added |
 | `PATCH/DELETE /items/{id}` | Edit an item; `{"checked": true}` puts it in the cart |
 | `POST /items/{id}/step` | `{"by": 1}` or `{"by": -1}`: change the amount by its step |
 | `POST /items/restore` | `{"ids": [...]}`: undo a delete or *finish* |
-| `POST /lists/{id}/finish` | Clear the items in the cart ("finish shopping") |
-| `GET/POST /shops/{id}/staples`, `PATCH/DELETE /staples/{id}` | Staples |
-| `POST /lists/{id}/staples` | `{"staples": [{"staple_id": "…"}]}`: add staples to a list |
+| `POST /lists/{id}/finish` | Clear the ticked items (**Done**, finish shopping) |
+| `POST /lists/{id}/from-template` | `{"template_id": "…", "items": [{"item_id": "…"}]}`: add a template's items to a list (without `items`: all of them) |
 | `GET /catalog?q=milk&shop_id=…` | Suggestions from your item catalogue (without `q`: all of it) |
 | `GET /catalog/frequent?list_id=…` | What you buy most at the list's shop and isn't on the list |
 | `PATCH/DELETE /catalog/{id}`, `POST /catalog/merge` | Manage the catalogue |
@@ -54,18 +53,18 @@ curl -H "Authorization: Bearer sc_…" http://cart.local:3100/api/v1/summary
 | `GET/POST /lists/{id}/shares`, `PATCH/DELETE /shares/{id}` | Sharing: `{"principal_type": "user" \| "household", "principal_id": "…", "role": "editor" \| "viewer"}`; delete your own share to leave |
 | `POST /items/{id}/move` | Reorder an item: `{"after": "<item id>"}` or `{"before": …}` (neither = the end); also `category_id` and `list_id` to move it to another category or list |
 | `POST /items/move` | `{"ids": [...], "list_id": "…"}`: move several items to another list |
-| `POST /categories/{id}/move`, `/lists/{id}/move`, `/shops/{id}/move`, `/staples/{id}/move` | Reorder: `{"after": …}` or `{"before": …}` |
-| `GET/POST /catalog/{id}/products`, `PATCH/DELETE /products/{id}` | Brands/products of a catalogue item. Items and staples take a `product_id` |
+| `POST /categories/{id}/move`, `/lists/{id}/move`, `/shops/{id}/move` | Reorder: `{"after": …}` or `{"before": …}` |
+| `GET/POST /catalog/{id}/products`, `PATCH/DELETE /products/{id}` | Brands/products of a catalogue item. Items take a `product_id` |
 | `PUT /catalog/{id}/preferred` | `{"product_id": "…", "shop_id": "…"}` (no `shop_id`: everywhere; `null` product: no preference) |
 | `POST /images` · `GET /images/{id}[?size=large]` | Upload a picture (JPEG/PNG/WebP as the body, up to `MAX_UPLOAD_MB`); it's resized and re-encoded |
 | `GET /lookup?q=` · `GET /lookup/barcode/{code}` | Search Open Food Facts by name or barcode (503 when switched off or unreachable) |
 | `GET /lookup/picture/{code}` · `POST /lookup/{code}/import` | A result's picture (via your server); use a result as a product or picture |
 
-Adding milk to your supermarket's default list from a script:
+Adding milk to a list from a script (or to `/inbox/items` when you'll sort it later):
 
 ```sh
 curl -X POST -H "Authorization: Bearer sc_…" -H "Content-Type: application/json" \
-  -d '{"text": "milk 2"}' http://cart.local:3100/api/v1/shops/<shop id>/items
+  -d '{"text": "milk 2"}' http://cart.local:3100/api/v1/lists/<list id>/items
 ```
 
 ## Coming with later phases

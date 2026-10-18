@@ -12,7 +12,7 @@ like its sibling [Streamline](https://github.com/Laurits7/Streamline): one `dock
 then open `http://IP:PORT` on any phone, tablet or computer and sign in.
 
 - **Shopping** tab: lists per **shop**, each list split into **categories** (Dairy, Meat,
-  Vegetables…), everything ordered by **drag and drop**, a **default list** and a **staples**
+  Vegetables…), everything ordered by **drag and drop**, **templates**
   template per shop.
 - **Wishlist** tab: my own wishlist split into **topic sections**, plus **gift lists** for other
   people that the person themselves never sees, with "I'll get this" claims.
@@ -138,19 +138,18 @@ Households are **share targets**, not owners: nothing is visible to a household 
 owner shared it there (D-5).
 
 ### 5.2 Shopping
-- **Shop**: owner (user), `name`, optional `color`/`icon`, `position`, `default_list_id`.
+- **Shop**: owner (user), `name`, optional `color`/`icon`, `position`.
   Shops are personal: each user arranges their own shops.
-- **List**: `shop_id`, owner (user, the shop's owner), `name`, `position`, `archived_at`.
-  Exactly one list per shop is the **default list** (§6.2). Lists are the unit of sharing.
+- **List**: `shop_id`, owner (user, the shop's owner), `kind` (`list` | `template` | `inbox`),
+  `name`, `position`, `archived_at`. Templates (§6.3) are lists of usual items; each user has
+  one **inbox** without a shop (§6.2). Lists are the unit of sharing (not the inbox).
 - **Category**: `list_id`, `name`, `position`. Categories belong to a list, so a shared list
-  carries its own layout. A new list starts with a copy of the categories of its shop's default
-  list (D-7). Items without a category show under *Other* at the end.
+  carries its own layout. A new list starts with a copy of the categories of its template, else of
+  its shop's newest list (D-7, D-65). Items without a category show under *Other* at the end.
 - **Item**: `list_id`, `category_id?`, `catalog_item_id?`, `name`, `amount` (decimal, default 1),
   `unit?` ("kg", "g", "l", "pack"…; empty means pieces), `step?` (overrides the +/- step),
   `note`, `position`, `checked_at?`, `checked_by?`, `added_by`, `source`
   (`manual` | `staple` | `mealie` | `api`), `external_ref?` (e.g. the Mealie item id).
-- **Staple**: `shop_id`, `catalog_item_id?`, `name`, `amount`, `unit?`, `category_name?`, `position`. The shop's
-  template of usual purchases (§6.3).
 - **CatalogItem**: the **database of previously used items**, per user: `name`,
   `normalized_name` (unique per user: lower-cased, trimmed, diacritics kept), last used
   category name, usual `amount`/`unit`/`step`, `use_count`, `last_used_at`, optional `shop_id`
@@ -162,7 +161,7 @@ owner shared it there (D-5).
   `source` (`manual` | `openfoodfacts`), `source_ref?`, `position`. A catalogue item can have
   any number of products and one **preferred** product (optionally per shop:
   **ProductPreference** `catalog_item_id`, `shop_id?`, `product_id`).
-  Items and staples get an optional `product_id`: empty means "any milk", set means "milk by X".
+  Items get an optional `product_id`: empty means "any milk", set means "milk by X".
 - **Image** (no `rev`): owner, `sha256` (dedup), `mime`, `width`, `height`, `bytes`, stored as
   `data/images/<sha256>.jpg` (thumbnail ≈ 160 px) and `…-l.jpg` (≈ 640 px, D-39). Never the
   original upload. Also usable as a picture for a catalogue item without a brand.
@@ -197,24 +196,28 @@ owner shared it there (D-5).
 - Create, rename, recolour, reorder (drag) and delete shops. Deleting asks for confirmation and
   says how many lists and items go with it.
 - A shop holds one or more lists (e.g. "Weekly", "Party on Saturday"). Lists can be created,
-  renamed, reordered, archived and deleted. One of them is the **default**.
-- The Shopping tab is a **summary page**: every shop with its lists, each list as a card with
-  its open items (tick and −/+ in place), its own quick add and the cart folded into one line
-  with *Finish shopping*. A list's title opens it full screen, grouped by category (D-34).
+  renamed, reordered, archived and deleted, and started empty or from a template.
+- The Shopping tab is a **summary page**: every shop with its active lists (not templates),
+  each list as a card with its items (tick and −/+ in place, ticked ones greyed out at the
+  end), its own quick add and a **Done** button that finishes the shopping. A list's title opens it full screen, grouped by category (D-34).
   Lists shared with me appear under their owner's shop name, marked as shared.
 - Move an item (or a selection of items) to another list, including a list of another shop.
 
-### 6.2 Default list
-- Each shop's default list is where items land when no list is chosen:
-  `POST /shops/{id}/items` in the API, Mealie imports (§6.10).
-- Creating a shop creates its default list ("Shopping list"); any list can be made default;
-  the default list can't be deleted until another is made default.
+### 6.2 Inbox
+- Each user has an **inbox**: where items land when no list is chosen (`POST /inbox/items` in
+  the API, Mealie imports without a target list, §6.10). It shows at the top of the Shopping
+  tab while it has items; each item can be assigned to a list. It can't be shared, renamed or
+  deleted (D-65).
+- Creating a shop creates its first list ("Shopping list").
 
-### 6.3 Staples
-- Each shop has a **staples** template: the things usually bought there (milk, bread, coffee).
-- "Add staples" on a list shows the staples as a checklist, pre-ticking those not already open on
-  the list; one tap adds them, with category and quantity.
-- Any item can be turned into a staple from its menu; staples are reordered by drag.
+### 6.3 Templates
+- A shop can have several **templates**: the things usually bought there (milk, bread,
+  coffee). They live on their own **Templates** tab and are edited like lists, but items in
+  them aren't ticked.
+- A new list can start from a template (its items and categories are copied).
+- "Add from template" on a list shows a template as a checklist, pre-ticking the items not
+  already open on the list; one tap adds them, with category and quantity.
+- Any item can be added to a template from its menu; templates are reordered like lists.
 
 ### 6.4 Items and categories
 - **Quick add** box at the top of the list: type, Enter, next. A trailing amount and unit is
@@ -224,9 +227,9 @@ owner shared it there (D-5).
   remembered category automatically.
 - **Categories**: create, rename, reorder (drag), collapse, delete (items move to *Other*).
   New lists get sensible starter categories only when there is nothing to copy (D-7).
-- **Ticking**: one tap ticks an item; ticked items move to an *In the cart* section at the
-  bottom (still visible, untick with one tap). **Finish shopping** removes ticked items from
-  the list (they stay in the catalogue), with undo.
+- **Ticking**: one tap ticks an item; ticked items move to the end of the list, greyed out
+  and struck through (untick with one tap). **Done** (finish shopping) removes ticked items
+  from the list (they stay in the catalogue), with undo.
 - **Amount stepper**: every item shows its amount with **−** and **+** buttons (large touch
   targets). The step is 1 for pieces/packs, 0.5 for kg/l, 100 for g/ml, or the item's own `step`.
   Pressing − at the smallest step asks to remove the item (or removes it with undo). Tapping the
@@ -236,7 +239,7 @@ owner shared it there (D-5).
   instead of creating a second row (with a toast "Milk: 2 → 3", undo).
 
 ### 6.4a Item catalogue (previously used items)
-- Every item a user adds (by typing, from staples, Mealie or the API) is recorded in their
+- Every item a user adds (by typing, from templates, Mealie or the API) is recorded in their
   **catalogue** with its category, usual amount/unit and how often and how recently it was used.
 - **Suggestions while typing**: matches by prefix and word start first, then substring, ranked
   by frequency and recency (and boosted for the current shop). Results come from a client-side
@@ -284,7 +287,7 @@ The same thing often comes from different producers: *milk by Alma* or *milk by 
 
 ### 6.5 Drag-and-drop ordering
 - Drag items within a category, between categories, and into *Other*; drag categories, lists,
-  shops, staples, wish sections and wish items.
+  shops, templates, wish sections and wish items.
 - Works with mouse, touch (long-press to lift) and keyboard (pick up with Space, move with
   arrows, drop with Space; announced to screen readers).
 - Order is stored as **fractional-index position keys** (strings), so a move writes one row and
@@ -331,7 +334,7 @@ The same thing often comes from different producers: *milk by Alma* or *milk by 
 
 ### 6.10 Mealie integration (pull)
 - Per user, in Settings → Integrations: Mealie base URL, Mealie API token, which Mealie shopping
-  list to watch, and the **target**: a shop (its default list) or a specific list.
+  list to watch, and the **target**: the user's inbox or a specific list.
 - Every 5 minutes (and on "Sync now") the server reads unchecked items of the watched Mealie
   list, adds them to the target list (`source = mealie`, linked via ExternalLink so nothing is
   imported twice), then **ticks them in Mealie** so Mealie's list works as an inbox (D-3).
@@ -441,8 +444,8 @@ See [`WORKPLAN.md`](WORKPLAN.md) for the chunks. In short:
 0. **Spec and docs skeleton** (this document, work plan, decisions, MkDocs site).
 1. **Foundation**: workspace, Docker/compose, SQLite + migrations, first-run setup, login,
    sessions, users, households, API tokens, OpenAPI, security headers, UI shell, CI.
-2. **Shopping core**: shops, lists, default list, categories, items, quick add, ticking,
-   amount stepper, finish shopping, staples, item catalogue with suggestions.
+2. **Shopping core**: shops, lists, categories, items, quick add, ticking,
+   amount stepper, finish shopping, templates and the inbox (originally staples, D-65), item catalogue with suggestions.
 3. **Drag and drop** everywhere, fractional indexing, move between lists.
 3b. **Products and pictures**: brands per catalogue item, preferred products, picture upload
    and resizing, Open Food Facts lookup, barcode scanning.
