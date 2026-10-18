@@ -3,7 +3,8 @@
 > Companion to [`SPEC.md`](SPEC.md). Section numbers like §6.8 refer to the spec.
 > Status (2026-10-18): Phase 0 (spec, plan, docs skeleton) done. Part A and all Part C defaults
 > confirmed (D-12..D-21). **Phase 1 done** (D-22..D-26). **Phase 2 chunks done** (D-27..D-34); gate needs the owner's
-> manual check. **Phase 3 chunks done** (D-35..D-38). **Phase 3b chunks done** (D-39..D-43). **Phase 4 chunks done** (D-44..D-49). **Phase 5 chunks done** (D-50..D-53). **Next: Phase 6 (integrations).**
+> manual check. **Phase 3 chunks done** (D-35..D-38). **Phase 3b chunks done** (D-39..D-43). **Phase 4 chunks done** (D-44..D-49). **Phase 5 chunks done** (D-50..D-53). **Phase 6 chunks 6.1–6.4 done** (D-54..D-59). **Next: Phase 7 (PWA, polish, release);**
+> 6.5 is for a Streamline session.
 > Legend: `[x]` done · `[~]` partly done (remaining work noted) · `[ ]` not started.
 
 ## How to use this plan
@@ -152,17 +153,18 @@ SQL) → SQLite (WAL, one writer pool of 1, reader pool) → event log row → S
       docker measurements and the manual check with two or three accounts still to do.
 
 ### Phase 6. Integrations
-- [ ] **6.1 Summary API for Streamline** (§6.11): `GET /summary`, `POST /lists/{id}/finish`,
+- [x] **6.1 Summary API for Streamline** (§6.11): `GET /summary`, `POST /lists/{id}/finish`,
       `PUBLIC_URL` deep links; docs page with curl examples.
-- [ ] **6.2 Integration framework**: encrypted secrets, polling job with backoff, last error,
+- [x] **6.2 Integration framework**: encrypted secrets, polling job with backoff, last error,
       Settings → Integrations UI; outgoing HTTP hardening (§7.4).
-- [ ] **6.3 Mealie pull** (§6.10) against a pinned Mealie version (dev compose profile):
+- [x] **6.3 Mealie pull** (§6.10) against a pinned Mealie version (dev compose profile):
       list picker, target picker, label → category, tick in Mealie, ExternalLink dedup; tests
       with a recorded/fake Mealie server.
-- [ ] **6.4 Docs**: Mealie and Streamline guides.
+- [x] **6.4 Docs**: Mealie and Streamline guides.
 - [ ] **6.5 Streamline provider** *(in the Streamline repo, its own session)*: ShoppingCart
       provider in Streamline's integration framework, one "Go shopping" task per list/shop.
-- [ ] **Phase 6 gate**.
+- [~] **Phase 6 gate**: checks, tests (fake Mealie), docs and a run against a real Mealie 3.29
+      done; docker measurements and the owner's check with their own Mealie still to do.
 
 ### Phase 7. PWA, polish, release
 - [ ] **7.1 PWA**: manifest/icons, service worker over HTTPS, install prompt.

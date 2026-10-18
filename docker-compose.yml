@@ -31,3 +31,21 @@ services:
       # Behind an HTTPS reverse proxy (Caddy, Traefik, Tailscale serve):
       # TRUST_PROXY: "true"
       # PUBLIC_URL: https://cart.example.com
+
+  # Development only: a Mealie to test the integration against, pinned to the version the
+  # integration was written for. Not started by `docker compose up`; use
+  # `docker compose --profile mealie-dev up -d mealie`, then open http://localhost:9925.
+  mealie:
+    profiles: ["mealie-dev"]
+    image: ghcr.io/mealie-recipes/mealie:v3.29.0
+    container_name: mealie-dev
+    ports:
+      - "9925:9000"
+    volumes:
+      - mealie-dev:/app/data
+    environment:
+      ALLOW_SIGNUP: "false"
+      BASE_URL: http://localhost:9925
+
+volumes:
+  mealie-dev:

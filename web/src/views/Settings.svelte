@@ -4,6 +4,7 @@
   import { session } from '../lib/session.svelte'
   import { toast } from '../lib/toast.svelte'
   import Households from './settings/Households.svelte'
+  import Integrations from './settings/Integrations.svelte'
   import Profile from './settings/Profile.svelte'
   import Security from './settings/Security.svelte'
   import Tokens from './settings/Tokens.svelte'
@@ -36,6 +37,7 @@
 <Households />
 <Security />
 <Tokens />
+<Integrations />
 {#if session.me?.is_admin}<Users />{/if}
 
 <section class="card about">

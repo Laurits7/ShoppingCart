@@ -192,3 +192,31 @@ All proposed defaults (Q-1 … Q-10) were accepted by the owner on 2026-10-18.
 - **D-52 · Wishlist roles**: like lists (owner manages and shares, editors add and edit wishes
   and sections, viewers read and claim). A person with gift lists can't be removed.
 - **D-53 · Link previews**: only the link's host is shown; nothing is fetched (§7.4).
+
+## Phase 6 (2026-10-18)
+
+- **D-54 · Mealie API**: written against Mealie v3.29 (its OpenAPI read on 2026-10-18):
+  `/api/households/shopping/lists` and `/…/items`, bearer API token. Items are fetched with a
+  `queryFilter` and filtered again locally; ticking sends each item back exactly as received with
+  `checked: true` (the bulk update replaces whole items, so nothing else is reset).
+  `docker compose --profile mealie-dev` runs that Mealie version for testing.
+- **D-55 · Imports**: one transaction per run imports what isn't linked yet (`external_links`),
+  then Mealie is emptied (tick, delete or keep, D-16). A failed tick is retried on the next run
+  without importing twice. Mapping lives in `domain::mealie`: food → name, quantity/unit →
+  amount/unit (quantity 1 without a unit is just the item), free text parsed like quick add,
+  item label (or the food's) → category. Imported items are pushed to live clients like any
+  other change.
+- **D-56 · Running integrations**: a background job every 30 s runs what's due; after success
+  the next run is in 5 minutes, after failures it backs off (5, 10, 20 … up to 360 minutes).
+  Saving settings resets the back-off. One run at a time. The last error is shown, never the
+  token; integration secrets are managed from a browser session only (like D-25).
+- **D-57 · Secrets**: XChaCha20-Poly1305 (`chacha20poly1305` 0.10); key = SHA-256 of
+  `SECRET_KEY` if set, else 32 random bytes in `data/secret.key` (created on first start,
+  mode 600). A changed key makes stored tokens unreadable: the integration says to enter it again.
+- **D-58 · Outgoing HTTP** (§7.4): one rustls/ring client for lookups (no redirects) and one for
+  integrations (redirects only within the same host, at most three); timeouts 5 s connect /
+  12–15 s total, answers capped (5 MB for Mealie); only http(s) addresses without credentials.
+  LAN targets allowed on purpose.
+- **D-59 · Summary links**: `PUBLIC_URL`, else the address the request came to (forwarded host
+  and scheme only with `TRUST_PROXY`). The Streamline provider (6.5) belongs to the Streamline
+  repository and its own session.

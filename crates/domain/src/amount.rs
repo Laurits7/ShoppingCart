@@ -120,6 +120,21 @@ pub fn combine(
     (eb == ab).then(|| round((existing + amount * af / ef).min(MAX_AMOUNT)))
 }
 
+/// "2", "1.5 kg", "500 g": an amount for display (as `formatAmount` in the web app).
+pub fn format(amount: f64, unit: Option<&str>) -> String {
+    let a = round(amount);
+    let n = if a.fract() == 0.0 {
+        format!("{}", a as i64)
+    } else {
+        let s = format!("{a:.3}");
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    };
+    match unit {
+        Some(u) if !u.is_empty() => format!("{n} {u}"),
+        _ => n,
+    }
+}
+
 /// What a quick-add line means.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parsed {
@@ -267,6 +282,14 @@ mod tests {
         assert_eq!(step(100.0, Some("g"), None, false), None);
         assert_eq!(step(2.0, Some("pack"), Some(0.25), false), Some(1.75));
         assert_eq!(step(1.0, None, Some(0.0), true), Some(2.0));
+    }
+
+    #[test]
+    fn formats() {
+        assert_eq!(format(2.0, None), "2");
+        assert_eq!(format(1.5, Some("kg")), "1.5 kg");
+        assert_eq!(format(0.1 + 0.2, Some("l")), "0.3 l");
+        assert_eq!(format(500.0, Some("g")), "500 g");
     }
 
     #[test]

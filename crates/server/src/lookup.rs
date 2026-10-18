@@ -6,7 +6,7 @@
 
 use std::{
     collections::VecDeque,
-    sync::{Arc, Mutex},
+    sync::Mutex,
     time::{Duration, Instant},
 };
 
@@ -25,27 +25,9 @@ use crate::{
 const MAX_JSON: usize = 2 * 1024 * 1024;
 const MAX_PICTURE: usize = 4 * 1024 * 1024;
 const CACHE_HOURS: i64 = 24;
-const USER_AGENT: &str = concat!(
-    "ShoppingCart/",
-    env!("CARGO_PKG_VERSION"),
-    " (https://github.com/Laurits7/ShoppingCart)"
-);
-
-/// The HTTP client for lookups: rustls with the ring provider and bundled web roots.
+/// The HTTP client for lookups (see `net`).
 pub fn client() -> anyhow::Result<reqwest::Client> {
-    let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let roots = rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let tls = rustls::ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()?
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    Ok(reqwest::Client::builder()
-        .tls_backend_preconfigured(tls)
-        .user_agent(USER_AGENT)
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(12))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?)
+    crate::net::lookup_client()
 }
 
 /// One product found, as shown in the picker.

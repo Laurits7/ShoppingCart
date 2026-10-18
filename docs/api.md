@@ -49,6 +49,8 @@ curl -H "Authorization: Bearer sc_…" http://cart.local:3100/api/v1/summary
 | `POST /wishlists/{id}/items`, `PATCH/DELETE /wish-items/{id}`, `POST /wish-items/{id}/move`, `POST /wish-items/restore` | Wishes: `title`, `url`, `price`, `currency`, `note`, `priority` 0–2, `section_id`; `PATCH {"received": true}` archives |
 | `POST /wish-items/{id}/claim`, `PATCH/DELETE /claims/{id}` | "I'll get this", `{"status": "bought"}`, release. Never visible to the owner of an own wishlist |
 | `GET/POST /wishlists/{id}/shares` | Sharing a wishlist (same as lists) |
+| `GET /summary` | What needs buying on each list, with links: see [Streamline](guides/streamline.md) |
+| `GET/POST /integrations`, `PATCH/DELETE /integrations/{id}`, `POST /integrations/{id}/sync`, `GET /integrations/{id}/mealie/lists` | Mealie (changes need a browser session; tokens are never returned) |
 | `GET/POST /lists/{id}/shares`, `PATCH/DELETE /shares/{id}` | Sharing: `{"principal_type": "user" \| "household", "principal_id": "…", "role": "editor" \| "viewer"}`; delete your own share to leave |
 | `POST /items/{id}/move` | Reorder an item: `{"after": "<item id>"}` or `{"before": …}` (neither = the end); also `category_id` and `list_id` to move it to another category or list |
 | `POST /items/move` | `{"ids": [...], "list_id": "…"}`: move several items to another list |
@@ -70,7 +72,6 @@ curl -X POST -H "Authorization: Bearer sc_…" -H "Content-Type: application/jso
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /summary` | Open items per list, for Streamline and dashboards |
 
 Keeping a dashboard up to date:
 

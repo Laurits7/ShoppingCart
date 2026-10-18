@@ -32,6 +32,8 @@ pub struct Config {
     pub max_upload_bytes: usize,
     /// Where product pictures and brands are looked up; `None` when `PRODUCT_LOOKUP=off`.
     pub product_lookup: Option<LookupConfig>,
+    /// `SECRET_KEY`, if given (otherwise `data/secret.key` is used, created on first start).
+    pub secret_key: Option<String>,
 }
 
 /// The product lookup provider's addresses (Open Food Facts; tests use a fake server).
@@ -107,6 +109,7 @@ impl Config {
             public_url: var("PUBLIC_URL").map(|u| u.trim_end_matches('/').to_string()),
             max_upload_bytes: max_upload_mb * 1024 * 1024,
             product_lookup,
+            secret_key: var("SECRET_KEY"),
         })
     }
 
@@ -125,6 +128,7 @@ impl Config {
             max_upload_bytes: 8 * 1024 * 1024,
             // Tests never reach the internet; lookup tests plug in a fake provider.
             product_lookup: None,
+            secret_key: None,
         }
     }
 }

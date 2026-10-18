@@ -6,10 +6,14 @@ pub mod db;
 pub mod error;
 pub mod events;
 pub mod images;
+pub mod integrations;
 pub mod lookup;
+pub mod mealie;
 pub mod models;
+pub mod net;
 pub mod positions;
 pub mod routes;
+pub mod secrets;
 pub mod static_files;
 pub mod util;
 pub mod visibility;
@@ -30,6 +34,10 @@ pub struct App {
     pub bus: events::Bus,
     /// One-time tickets for `/events`: ticket → (user id, issued).
     pub tickets: Mutex<HashMap<String, (String, Instant)>>,
+    /// Encrypts stored integration tokens.
+    pub secrets: secrets::Secrets,
+    /// For integrations (same-host redirects only).
+    pub integration_http: reqwest::Client,
 }
 
 pub type AppState = Arc<App>;
@@ -42,6 +50,7 @@ pub async fn build(config: config::Config) -> anyhow::Result<(axum::Router, AppS
         Some(_) => Some(lookup::client()?),
         None => None,
     };
+    let secrets = secrets::Secrets::load(&config.data_dir, config.secret_key.as_deref())?;
     let state = Arc::new(App {
         config,
         db,
@@ -49,6 +58,8 @@ pub async fn build(config: config::Config) -> anyhow::Result<(axum::Router, AppS
         http,
         bus: events::Bus::default(),
         tickets: Mutex::new(HashMap::new()),
+        secrets,
+        integration_http: net::integration_client()?,
     });
     auth::bootstrap_admin(&state).await?;
     Ok((routes::router(state.clone()), state))
@@ -82,7 +93,8 @@ pub async fn run() -> anyhow::Result<()> {
     let config = config::Config::from_env()?;
     let addr = SocketAddr::new(config.bind, config.port);
     let (app, state) = build(config).await?;
-    spawn_cleanup(state);
+    spawn_cleanup(state.clone());
+    integrations::spawn_job(state);
     let listener = TcpListener::bind(addr).await?;
     tracing::info!("ShoppingCart listening on http://{addr}");
     axum::serve(

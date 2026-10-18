@@ -2,12 +2,14 @@ pub mod account;
 pub mod catalog;
 pub mod households;
 pub mod images;
+pub mod integrations;
 pub mod items;
 pub mod lookup;
 pub mod products;
 pub mod shares;
 pub mod shops;
 pub mod staples;
+pub mod summary;
 pub mod sync;
 pub mod wishes;
 
@@ -46,7 +48,9 @@ use crate::AppState;
         account::delete_user,
         households::list, households::create, households::patch, households::delete,
         households::add_member, households::patch_member, households::remove_member,
-        sync::shopping, sync::sync, sync::ticket, sync::events,
+        sync::shopping, sync::sync, sync::ticket, sync::events, summary::summary,
+        integrations::list, integrations::create, integrations::patch, integrations::delete,
+        integrations::sync_now, integrations::mealie_lists,
         shares::list, shares::create, shares::patch, shares::delete,
         shares::list_wishlist, shares::create_wishlist,
         wishes::list_persons, wishes::create_person, wishes::patch_person, wishes::delete_person,
@@ -75,6 +79,7 @@ use crate::AppState;
         (name = "products", description = "Brands, pictures and product lookups"),
         (name = "sharing", description = "Sharing lists and wishlists with people and households"),
         (name = "wishlists", description = "Wishlists, gift lists, persons and claims"),
+        (name = "integrations", description = "Mealie, Streamline and other apps"),
     )
 )]
 pub struct ApiDoc;
@@ -196,6 +201,20 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/shopping", get(sync::shopping))
         .route("/sync", get(sync::sync))
+        .route("/summary", get(summary::summary))
+        .route(
+            "/integrations",
+            get(integrations::list).post(integrations::create),
+        )
+        .route(
+            "/integrations/{id}",
+            patch(integrations::patch).delete(integrations::delete),
+        )
+        .route("/integrations/{id}/sync", post(integrations::sync_now))
+        .route(
+            "/integrations/{id}/mealie/lists",
+            get(integrations::mealie_lists),
+        )
         .route("/events", get(sync::events))
         .route("/events/ticket", post(sync::ticket))
         .route("/lists/{id}/shares", get(shares::list).post(shares::create))
