@@ -314,7 +314,10 @@ pub struct ProductPreference {
 #[ts(export)]
 pub struct Share {
     pub id: String,
-    pub list_id: String,
+    #[ts(type = "'list' | 'wishlist'")]
+    pub resource_type: String,
+    /// The list or wishlist.
+    pub resource_id: String,
     #[ts(type = "'user' | 'household'")]
     pub principal_type: String,
     pub principal_id: String,
@@ -327,6 +330,102 @@ pub struct Share {
     #[sqlx(skip)]
     pub members: Vec<String>,
     pub created_at: String,
+    #[ts(type = "number")]
+    pub rev: i64,
+}
+
+// ---- wishlists (SPEC §5.3) -----------------------------------------------------------
+
+/// Someone gifts are for (yours only), optionally linked to their account here: a gift list
+/// about them is then hidden from that account.
+#[derive(Debug, Clone, Serialize, FromRow, TS, utoipa::ToSchema)]
+#[ts(export)]
+pub struct Person {
+    pub id: String,
+    pub name: String,
+    pub user_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    #[ts(type = "number")]
+    pub rev: i64,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow, TS, utoipa::ToSchema)]
+#[ts(export)]
+pub struct Wishlist {
+    pub id: String,
+    pub owner_id: String,
+    pub owner_name: String,
+    /// `own`: someone's own wishes; `gift`: gift ideas for the recipient.
+    #[ts(type = "'own' | 'gift'")]
+    pub kind: String,
+    pub recipient_person_id: Option<String>,
+    /// The recipient's name (gift lists).
+    pub recipient_name: Option<String>,
+    pub title: String,
+    pub position: String,
+    #[ts(type = "'owner' | 'editor' | 'viewer'")]
+    pub role: String,
+    /// Whether you see claims on it (everyone but the owner of an own wishlist).
+    pub sees_claims: bool,
+    pub created_at: String,
+    pub updated_at: String,
+    #[ts(type = "number")]
+    pub rev: i64,
+}
+
+/// A topic within a wishlist ("Books", "Kitchen").
+#[derive(Debug, Clone, Serialize, FromRow, TS, utoipa::ToSchema)]
+#[ts(export)]
+pub struct WishSection {
+    pub id: String,
+    pub wishlist_id: String,
+    pub name: String,
+    pub position: String,
+    pub created_at: String,
+    pub updated_at: String,
+    #[ts(type = "number")]
+    pub rev: i64,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow, TS, utoipa::ToSchema)]
+#[ts(export)]
+pub struct WishItem {
+    pub id: String,
+    pub wishlist_id: String,
+    pub section_id: Option<String>,
+    pub title: String,
+    /// An http(s) link.
+    pub url: Option<String>,
+    pub price: Option<f64>,
+    pub currency: Option<String>,
+    pub note: String,
+    /// 0 normal, 1 would like a lot, 2 most wanted.
+    #[ts(type = "number")]
+    pub priority: i64,
+    pub position: String,
+    /// Set once it was received (the item is then in the Received archive).
+    pub received_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    #[ts(type = "number")]
+    pub rev: i64,
+}
+
+/// "I'll get this" on a wish item. Never shown to the owner of an own wishlist, nor to a
+/// gift list's recipient (who can't see the list at all).
+#[derive(Debug, Clone, Serialize, FromRow, TS, utoipa::ToSchema)]
+#[ts(export)]
+pub struct Claim {
+    pub id: String,
+    pub wish_item_id: String,
+    pub user_id: String,
+    pub user_name: String,
+    #[ts(type = "'planned' | 'bought'")]
+    pub status: String,
+    pub note: String,
+    pub created_at: String,
+    pub updated_at: String,
     #[ts(type = "number")]
     pub rev: i64,
 }

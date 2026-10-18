@@ -175,3 +175,20 @@ All proposed defaults (Q-1 … Q-10) were accepted by the owner on 2026-10-18.
   message and the store reloads; a sync never overwrites something still waiting to be sent.
 - **D-49 · SSE tickets**: browsers use the session cookie; API clients that can't set headers on
   an event stream get a one-time ticket (`POST /events/ticket`, a minute, in memory).
+
+## Phase 5 (2026-10-18)
+
+- **D-50 · Gift-list privacy, no hints**: the recipient (the account linked to the gift list's
+  person) is excluded in the visibility SQL from every read, write, share listing, `/sync`
+  (rows, deletions, visible ids) and the event stream; the live audience for a wishlist uses
+  only what a subscriber sees *now* (not "could see until now", as for lists), and share
+  changes never nudge the recipient. A gift list can't be shared directly with its recipient,
+  and nobody can link a person to their own account. Linking an account later hides the list
+  from it at once.
+- **D-51 · Claims stay surprises**: claims have their own rows and revs and never touch the wish
+  item's `rev`/`updated_at`, so an own wishlist's owner can't notice them in `/sync`; the live
+  audience for claims is "sees claims on that wishlist". Viewers may claim (that's what sharing
+  a wishlist is for); only the claimer changes or releases a claim; one live claim per item.
+- **D-52 · Wishlist roles**: like lists (owner manages and shares, editors add and edit wishes
+  and sections, viewers read and claim). A person with gift lists can't be removed.
+- **D-53 · Link previews**: only the link's host is shown; nothing is fetched (§7.4).

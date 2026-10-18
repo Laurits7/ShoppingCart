@@ -29,6 +29,7 @@ import { label as productLabel, picture, preferred, type PictureFrom } from './p
 import { session } from './session.svelte'
 import { toast } from './toast.svelte'
 import { ulid } from './ulid'
+import { wishes } from './wishes.svelte'
 
 type Positioned = { id: string; position: string }
 export const byPosition = (a: Positioned, b: Positioned) =>
@@ -88,6 +89,7 @@ class ShoppingStore {
   /** Forget everything (signed out); `queue` also drops changes not yet sent. */
   reset(queue = false) {
     if (queue) this.outbox.clear()
+    wishes.reset()
     this.rev = 0
     this.loaded = false
     this.shops = []
@@ -111,6 +113,7 @@ class ShoppingStore {
     this.lists = d.lists
     this.categories = keep(d.categories, this.categories)
     this.items = keep(d.items, this.items)
+    wishes.apply(d, true, waiting)
     this.staples = d.staples
     this.catalog = d.catalog
     this.products = d.products
@@ -145,8 +148,9 @@ class ShoppingStore {
     const d = await api.get<ShoppingData>(`/sync?since=${this.rev}`)
     const known = new Set(this.lists.map((l) => l.id))
     // A list newly shared with me: its older items aren't in the delta, so load everything.
-    if (d.visible_lists.some((id) => !known.has(id))) return this.load()
+    if (d.visible_lists.some((id) => !known.has(id)) || wishes.hasNew(d)) return this.load()
     const waiting = this.outbox.keys()
+    wishes.apply(d, false, waiting)
     const merge = <T extends { id: string }>(arr: T[], rows: T[]) => {
       for (const r of rows) if (!waiting.has(r.id)) upsert(arr, r)
     }
@@ -182,6 +186,10 @@ class ShoppingStore {
 
   /** Queue a change; `apply` gets the server's answer unless a newer change to the same
    * thing is still waiting. */
+  queue<T>(e: Omit<Entry, 'user'>, apply?: (res: T) => void) {
+    this.#queue(e, apply)
+  }
+
   #queue<T>(e: Omit<Entry, 'user'>, apply?: (res: T) => void) {
     this.outbox.add({ ...e, user: session.me?.id ?? '' }).then((res) => {
       if (res !== undefined && apply && !(e.key && this.outbox.keys().has(e.key))) apply(res as T)

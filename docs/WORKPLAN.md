@@ -3,7 +3,7 @@
 > Companion to [`SPEC.md`](SPEC.md). Section numbers like §6.8 refer to the spec.
 > Status (2026-10-18): Phase 0 (spec, plan, docs skeleton) done. Part A and all Part C defaults
 > confirmed (D-12..D-21). **Phase 1 done** (D-22..D-26). **Phase 2 chunks done** (D-27..D-34); gate needs the owner's
-> manual check. **Phase 3 chunks done** (D-35..D-38). **Phase 3b chunks done** (D-39..D-43). **Phase 4 chunks done** (D-44..D-49). **Next: Phase 5 (wishlists).**
+> manual check. **Phase 3 chunks done** (D-35..D-38). **Phase 3b chunks done** (D-39..D-43). **Phase 4 chunks done** (D-44..D-49). **Phase 5 chunks done** (D-50..D-53). **Next: Phase 6 (integrations).**
 > Legend: `[x]` done · `[~]` partly done (remaining work noted) · `[ ]` not started.
 
 ## How to use this plan
@@ -140,15 +140,16 @@ SQL) → SQLite (WAL, one writer pool of 1, reader pool) → event log row → S
       the outbox) still to do.
 
 ### Phase 5. Wishlists
-- [ ] **5.1 API**: persons, wishlists (own/gift), sections, items, received archive, sharing via
+- [x] **5.1 API**: persons, wishlists (own/gift), sections, items, received archive, sharing via
       the same shares table.
-- [ ] **5.2 Privacy rules**: gift-recipient exclusion and owner-claim hiding in the visibility
+- [x] **5.2 Privacy rules**: gift-recipient exclusion and owner-claim hiding in the visibility
       module, `/sync` and SSE; exhaustive tests (§7.3).
-- [ ] **5.3 Claims API**: claim / bought / release.
-- [ ] **5.4 Wishlist UI**: My wishlists, Gift ideas per person, sections, DnD, claims, link
+- [x] **5.3 Claims API**: claim / bought / release.
+- [x] **5.4 Wishlist UI**: My wishlists, Gift ideas per person, sections, DnD, claims, link
       previews (title only, no server-side fetching in v1).
-- [ ] **5.5 Docs**: "Wishlists and gifts" guide.
-- [ ] **Phase 5 gate**.
+- [x] **5.5 Docs**: "Wishlists and gifts" guide.
+- [~] **Phase 5 gate**: checks, tests (incl. the privacy suite), docs and an end-to-end run done;
+      docker measurements and the manual check with two or three accounts still to do.
 
 ### Phase 6. Integrations
 - [ ] **6.1 Summary API for Streamline** (§6.11): `GET /summary`, `POST /lists/{id}/finish`,

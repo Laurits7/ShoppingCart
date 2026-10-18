@@ -137,7 +137,7 @@
   {/if}
 </Sheet>
 
-<ShareSheet bind:open={shareOpen} {list} />
+<ShareSheet bind:open={shareOpen} target={{ id: list.id, name: list.name, role: list.role, owner_name: list.owner_name }} />
 
 <style>
   section {

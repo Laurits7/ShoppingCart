@@ -3,7 +3,11 @@
 /**
  * Who a list is shared with, and how.
  */
-export type Share = { id: string, list_id: string, principal_type: 'user' | 'household', principal_id: string, 
+export type Share = { id: string, resource_type: 'list' | 'wishlist', 
+/**
+ * The list or wishlist.
+ */
+resource_id: string, principal_type: 'user' | 'household', principal_id: string, 
 /**
  * The person's display name or the household's name.
  */

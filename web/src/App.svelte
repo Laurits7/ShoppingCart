@@ -95,7 +95,7 @@
       {#if route.name === 'shopping'}
         <Shopping listId={route.listId} />
       {:else if route.name === 'wishlist'}
-        {#await wishlist() then m}<m.default />{/await}
+        {#await wishlist() then m}<m.default wishlistId={route.wishlistId} />{/await}
       {:else if route.name === 'settings'}
         {#if route.page === 'catalog'}
           {#await catalogSettings() then m}<m.default />{/await}

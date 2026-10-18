@@ -9,6 +9,7 @@ pub mod shares;
 pub mod shops;
 pub mod staples;
 pub mod sync;
+pub mod wishes;
 
 use axum::{
     Router,
@@ -47,6 +48,12 @@ use crate::AppState;
         households::add_member, households::patch_member, households::remove_member,
         sync::shopping, sync::sync, sync::ticket, sync::events,
         shares::list, shares::create, shares::patch, shares::delete,
+        shares::list_wishlist, shares::create_wishlist,
+        wishes::list_persons, wishes::create_person, wishes::patch_person, wishes::delete_person,
+        wishes::list, wishes::create, wishes::patch, wishes::delete, wishes::move_wishlist,
+        wishes::create_section, wishes::patch_section, wishes::delete_section, wishes::move_section,
+        wishes::create_item, wishes::patch_item, wishes::delete_item, wishes::restore_items, wishes::move_item,
+        wishes::claim, wishes::patch_claim, wishes::release,
         shops::list_shops, shops::create_shop, shops::patch_shop, shops::delete_shop,
         shops::list_lists, shops::get_list, shops::create_list, shops::patch_list, shops::delete_list,
         items::get_categories, items::create_category, items::patch_category, items::delete_category,
@@ -66,7 +73,8 @@ use crate::AppState;
         (name = "shopping", description = "Shops, lists, categories, items and staples"),
         (name = "catalog", description = "Your item catalogue: everything you've added before"),
         (name = "products", description = "Brands, pictures and product lookups"),
-        (name = "sharing", description = "Sharing lists with people and households"),
+        (name = "sharing", description = "Sharing lists and wishlists with people and households"),
+        (name = "wishlists", description = "Wishlists, gift lists, persons and claims"),
     )
 )]
 pub struct ApiDoc;
@@ -192,6 +200,42 @@ pub fn router(state: AppState) -> Router {
         .route("/events/ticket", post(sync::ticket))
         .route("/lists/{id}/shares", get(shares::list).post(shares::create))
         .route("/shares/{id}", patch(shares::patch).delete(shares::delete))
+        .route(
+            "/wishlists/{id}/shares",
+            get(shares::list_wishlist).post(shares::create_wishlist),
+        )
+        .route(
+            "/persons",
+            get(wishes::list_persons).post(wishes::create_person),
+        )
+        .route(
+            "/persons/{id}",
+            patch(wishes::patch_person).delete(wishes::delete_person),
+        )
+        .route("/wishlists", get(wishes::list).post(wishes::create))
+        .route(
+            "/wishlists/{id}",
+            patch(wishes::patch).delete(wishes::delete),
+        )
+        .route("/wishlists/{id}/move", post(wishes::move_wishlist))
+        .route("/wishlists/{id}/sections", post(wishes::create_section))
+        .route("/wishlists/{id}/items", post(wishes::create_item))
+        .route(
+            "/wish-sections/{id}",
+            patch(wishes::patch_section).delete(wishes::delete_section),
+        )
+        .route("/wish-sections/{id}/move", post(wishes::move_section))
+        .route("/wish-items/restore", post(wishes::restore_items))
+        .route(
+            "/wish-items/{id}",
+            patch(wishes::patch_item).delete(wishes::delete_item),
+        )
+        .route("/wish-items/{id}/move", post(wishes::move_item))
+        .route("/wish-items/{id}/claim", post(wishes::claim))
+        .route(
+            "/claims/{id}",
+            patch(wishes::patch_claim).delete(wishes::release),
+        )
         .route("/shops", get(shops::list_shops).post(shops::create_shop))
         .route(
             "/shops/{id}",

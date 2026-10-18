@@ -38,6 +38,41 @@ pub fn list_role(is_owner: bool, shares: impl IntoIterator<Item = Role>) -> Opti
     }
 }
 
+/// A wishlist's kind (SPEC §5.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WishKind {
+    /// Someone's own wishlist.
+    Own,
+    /// Gift ideas for someone else (the recipient).
+    Gift,
+}
+
+/// The user's role on a wishlist, or `None`. Like lists, except that the recipient of a gift
+/// list never sees it, whatever it is shared with (SPEC §6.9, §7.3).
+pub fn wishlist_role(
+    kind: WishKind,
+    is_owner: bool,
+    is_recipient: bool,
+    shares: impl IntoIterator<Item = Role>,
+) -> Option<Role> {
+    if kind == WishKind::Gift && is_recipient {
+        return None;
+    }
+    list_role(is_owner, shares)
+}
+
+/// Whether someone who can see a wishlist sees its claims ("I'll get this"): everyone but the
+/// owner of their own wishlist, so surprises stay surprises.
+pub fn sees_claims(kind: WishKind, is_owner: bool) -> bool {
+    !(kind == WishKind::Own && is_owner)
+}
+
+/// Who may claim an item: whoever sees the claims (viewers too: claiming is what sharing a
+/// wishlist is for).
+pub fn may_claim(kind: WishKind, is_owner: bool) -> bool {
+    sees_claims(kind, is_owner)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -60,5 +95,35 @@ mod tests {
             Some(Role::Editor)
         );
         assert_eq!(list_role(true, [Role::Viewer]), Some(Role::Owner));
+    }
+
+    #[test]
+    fn gift_lists_never_reach_their_recipient() {
+        use WishKind::*;
+        // The recipient is excluded even when the list is shared with them (e.g. through a
+        // household) and even as an editor.
+        assert_eq!(wishlist_role(Gift, false, true, [Role::Editor]), None);
+        assert_eq!(
+            wishlist_role(Gift, false, false, [Role::Viewer]),
+            Some(Role::Viewer)
+        );
+        assert_eq!(wishlist_role(Gift, true, false, []), Some(Role::Owner));
+        // Own wishlists have no recipient.
+        assert_eq!(
+            wishlist_role(Own, false, true, [Role::Viewer]),
+            Some(Role::Viewer)
+        );
+        assert_eq!(wishlist_role(Own, false, false, []), None);
+    }
+
+    #[test]
+    fn claims_stay_surprises() {
+        use WishKind::*;
+        assert!(!sees_claims(Own, true));
+        assert!(sees_claims(Own, false));
+        assert!(sees_claims(Gift, true));
+        assert!(sees_claims(Gift, false));
+        assert!(!may_claim(Own, true));
+        assert!(may_claim(Gift, true));
     }
 }

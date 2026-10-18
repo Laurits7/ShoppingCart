@@ -1,10 +1,10 @@
 <script lang="ts">
-  // Who can see a list and why (SPEC §6.8). The owner shares with people or households as
-  // editor or viewer and revokes; someone it's shared with directly can leave it.
+  // Who can see a list or wishlist and why (SPEC §6.8, §6.9). The owner shares with people or
+  // households as editor or viewer and revokes; someone it's shared with directly can leave.
+  // A gift list's recipient isn't offered (the server refuses it and hides the list anyway).
   import { api, message } from '../../lib/api/client'
   import type { Household } from '../../lib/api/types/Household'
   import type { Share } from '../../lib/api/types/Share'
-  import type { ShoppingList } from '../../lib/api/types/ShoppingList'
   import type { UserSummary } from '../../lib/api/types/UserSummary'
   import Icon from '../../lib/components/Icon.svelte'
   import Sheet from '../../lib/components/Sheet.svelte'
@@ -13,12 +13,21 @@
   import { shopping } from '../../lib/shopping.svelte'
   import { toast } from '../../lib/toast.svelte'
 
-  let { open = $bindable(false), list }: { open: boolean; list: ShoppingList } = $props()
+  /** What is shared: a list or a wishlist (its id, name, my role and its owner's name). */
+  type Target = { id: string; name: string; role: string; owner_name: string }
+  let {
+    open = $bindable(false),
+    kind = 'list',
+    target,
+    hide = null,
+  }: { open: boolean; kind?: 'list' | 'wishlist'; target: Target; hide?: string | null } = $props()
+  const list = $derived(target)
+  const base = $derived(`/${kind}s/${target.id}/shares`)
   const owner = $derived(list.role === 'owner')
   let shares = $state<Share[]>([])
   let people = $state<UserSummary[]>([])
   let households = $state<Household[]>([])
-  let target = $state('')
+  let pick = $state('')
   let role = $state<'editor' | 'viewer'>('editor')
   let loading = $state(false)
 
@@ -30,7 +39,7 @@
     loading = true
     try {
       ;[shares, people, households] = await Promise.all([
-        api.get<Share[]>(`/lists/${list.id}/shares`),
+        api.get<Share[]>(base),
         owner ? api.get<UserSummary[]>('/users/directory') : Promise.resolve([]),
         owner ? api.get<Household[]>('/households') : Promise.resolve([]),
       ])
@@ -43,18 +52,18 @@
   const me = $derived(session.me?.id)
   // Admins see every household; only the ones I'm in can be shared with.
   const myHouseholds = $derived(households.filter((h) => h.members.some((m) => m.user_id === me)))
-  const candidates = $derived(people.filter((p) => p.id !== me && !shares.some((s) => s.principal_type === 'user' && s.principal_id === p.id)))
+  const candidates = $derived(people.filter((p) => p.id !== me && p.id !== hide && !shares.some((s) => s.principal_type === 'user' && s.principal_id === p.id)))
   const freeHouseholds = $derived(myHouseholds.filter((h) => !shares.some((s) => s.principal_type === 'household' && s.principal_id === h.id)))
   const mine = $derived(shares.find((s) => s.principal_type === 'user' && s.principal_id === me))
 
   async function add(e: Event) {
     e.preventDefault()
-    if (!target) return
-    const [principal_type, principal_id] = target.split(':')
+    if (!pick) return
+    const [principal_type, principal_id] = pick.split(':')
     try {
-      const s = await api.post<Share>(`/lists/${list.id}/shares`, { principal_type, principal_id, role })
+      const s = await api.post<Share>(base, { principal_type, principal_id, role })
       shares = [...shares.filter((x) => x.id !== s.id), s]
-      target = ''
+      pick = ''
     } catch (err) {
       toast(message(err), 'error')
     }
@@ -85,7 +94,7 @@
       await api.del(`/shares/${mine.id}`)
       open = false
       await shopping.sync()
-      router.go('/', true)
+      router.go(kind === 'list' ? '/' : '/wishlist', true)
     } catch (err) {
       toast(message(err), 'error')
     }
@@ -122,7 +131,7 @@
   {#if owner}
     {#if candidates.length || freeHouseholds.length}
       <form class="add" onsubmit={add}>
-        <select bind:value={target} aria-label="Share with">
+        <select bind:value={pick} aria-label="Share with">
           <option value="">Share with…</option>
           {#if freeHouseholds.length}
             <optgroup label="Households">
@@ -139,7 +148,7 @@
           <option value="editor">Can edit</option>
           <option value="viewer">Can view</option>
         </select>
-        <button class="btn primary" type="submit" disabled={!target}>Share</button>
+        <button class="btn primary" type="submit" disabled={!pick}>Share</button>
       </form>
     {/if}
     <p class="muted small">

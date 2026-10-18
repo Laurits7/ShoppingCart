@@ -7,7 +7,7 @@
 //! are personal. What each role allows lives in `shoppingcart_domain::visibility`.
 
 use shoppingcart_domain::visibility::{self as rules};
-pub use shoppingcart_domain::visibility::{Need, Role};
+pub use shoppingcart_domain::visibility::{Need, Role, WishKind};
 use sqlx::SqliteConnection;
 
 use crate::{
@@ -18,8 +18,13 @@ use crate::{
 /// Condition on a `shares s` row: a live share of list `list` reaching the user bound as
 /// `?1`, directly or through a household they're in.
 fn share_reaches(list: &str) -> String {
+    shares_reaching("list", list)
+}
+
+/// The same for any kind of resource (`list` or `wishlist`).
+fn shares_reaching(kind: &str, id: &str) -> String {
     format!(
-        "s.resource_type = 'list' AND s.resource_id = {list} AND s.deleted_at IS NULL
+        "s.resource_type = '{kind}' AND s.resource_id = {id} AND s.deleted_at IS NULL
          AND ((s.principal_type = 'user' AND s.principal_id = ?1)
            OR (s.principal_type = 'household' AND s.principal_id IN
                  (SELECT household_id FROM household_members WHERE user_id = ?1)))"
@@ -51,6 +56,180 @@ pub fn role_name(r: Role) -> &'static str {
         Role::Editor => "editor",
         Role::Viewer => "viewer",
     }
+}
+
+// ---- wishlists (SPEC §6.9, §7.3) -----------------------------------------------------------
+
+/// SQL condition selecting the live wishlists (alias `w`) visible to the user bound as `?1`:
+/// own or shared, never a gift list about them (whatever it's shared with).
+pub const VISIBLE_WISHLISTS: &str = "(w.deleted_at IS NULL
+     AND (w.owner_id = ?1 OR EXISTS (
+         SELECT 1 FROM shares s
+         WHERE s.resource_type = 'wishlist' AND s.resource_id = w.id AND s.deleted_at IS NULL
+           AND ((s.principal_type = 'user' AND s.principal_id = ?1)
+             OR (s.principal_type = 'household' AND s.principal_id IN
+                   (SELECT household_id FROM household_members WHERE user_id = ?1)))))
+     AND NOT (w.kind = 'gift' AND EXISTS (
+         SELECT 1 FROM persons p WHERE p.id = w.recipient_person_id AND p.user_id = ?1)))";
+
+/// SQL condition: visible wishlists (alias `w`) whose claims the user bound as `?1` sees (not
+/// their own wishlist's).
+pub const CLAIMS_VISIBLE: &str = "(w.deleted_at IS NULL
+     AND (w.owner_id = ?1 OR EXISTS (
+         SELECT 1 FROM shares s
+         WHERE s.resource_type = 'wishlist' AND s.resource_id = w.id AND s.deleted_at IS NULL
+           AND ((s.principal_type = 'user' AND s.principal_id = ?1)
+             OR (s.principal_type = 'household' AND s.principal_id IN
+                   (SELECT household_id FROM household_members WHERE user_id = ?1)))))
+     AND NOT (w.kind = 'gift' AND EXISTS (
+         SELECT 1 FROM persons p WHERE p.id = w.recipient_person_id AND p.user_id = ?1))
+     AND NOT (w.kind = 'own' AND w.owner_id = ?1))";
+
+/// SQL expression for the role (alias `w`) of the user bound as `?1` on a visible wishlist.
+pub fn wish_role_sql() -> String {
+    format!(
+        "(CASE WHEN w.owner_id = ?1 THEN 'owner'
+               WHEN EXISTS (SELECT 1 FROM shares s WHERE {} AND s.role = 'editor') THEN 'editor'
+               ELSE 'viewer' END)",
+        shares_reaching("wishlist", "w.id")
+    )
+}
+
+/// What a user may do with a wishlist.
+#[derive(Debug, Clone, Copy)]
+pub struct WishAccess {
+    pub role: Role,
+    pub kind: WishKind,
+    pub owner: bool,
+}
+
+impl WishAccess {
+    pub fn sees_claims(&self) -> bool {
+        rules::sees_claims(self.kind, self.owner)
+    }
+}
+
+/// The user's access to a live wishlist, or `None` if they can't see it (a gift list about
+/// them included).
+pub async fn wishlist_access(
+    conn: &mut SqliteConnection,
+    user_id: &str,
+    id: &str,
+) -> sqlx::Result<Option<WishAccess>> {
+    let row: Option<(String, String, Option<String>)> = sqlx::query_as(
+        "SELECT w.owner_id, w.kind, p.user_id FROM wishlists w
+         LEFT JOIN persons p ON p.id = w.recipient_person_id
+         WHERE w.id = ? AND w.deleted_at IS NULL",
+    )
+    .bind(id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let Some((owner, kind, recipient)) = row else {
+        return Ok(None);
+    };
+    let kind = if kind == "gift" {
+        WishKind::Gift
+    } else {
+        WishKind::Own
+    };
+    let roles: Vec<String> = sqlx::query_scalar(&format!(
+        "SELECT s.role FROM shares s WHERE {}",
+        shares_reaching("wishlist", "?2")
+    ))
+    .bind(user_id)
+    .bind(id)
+    .fetch_all(&mut *conn)
+    .await?;
+    let owner = owner == user_id;
+    Ok(rules::wishlist_role(
+        kind,
+        owner,
+        recipient.as_deref() == Some(user_id),
+        roles.iter().map(|r| {
+            if r == "editor" {
+                Role::Editor
+            } else {
+                Role::Viewer
+            }
+        }),
+    )
+    .map(|role| WishAccess { role, kind, owner }))
+}
+
+/// Access to a wishlist that allows `need`: 404 if it's not visible, 403 if it is but not
+/// for this.
+pub async fn require_wishlist(
+    conn: &mut SqliteConnection,
+    user: &AuthUser,
+    id: &str,
+    need: Need,
+) -> ApiResult<WishAccess> {
+    let a = wishlist_access(conn, user.id(), id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if rules::allows(a.role, need) {
+        Ok(a)
+    } else {
+        Err(AppError::Forbidden(match need {
+            Need::Manage => "only the wishlist's owner can do this".into(),
+            _ => "you can only view this wishlist".into(),
+        }))
+    }
+}
+
+/// The wishlist of a wish item, with the user's access for `need`. With `deleted`,
+/// tombstoned items count too (for undo).
+pub async fn require_wish_item(
+    conn: &mut SqliteConnection,
+    user: &AuthUser,
+    id: &str,
+    need: Need,
+    deleted: bool,
+) -> ApiResult<(String, WishAccess)> {
+    let w: String = sqlx::query_scalar(
+        "SELECT wishlist_id FROM wish_items WHERE id = ? AND (deleted_at IS NULL OR ?)",
+    )
+    .bind(id)
+    .bind(deleted)
+    .fetch_optional(&mut *conn)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    let a = require_wishlist(conn, user, &w, need).await?;
+    Ok((w, a))
+}
+
+/// The wishlist of a live section, for `need`.
+pub async fn require_wish_section(
+    conn: &mut SqliteConnection,
+    user: &AuthUser,
+    id: &str,
+    need: Need,
+) -> ApiResult<String> {
+    let w: String = sqlx::query_scalar(
+        "SELECT wishlist_id FROM wish_sections WHERE id = ? AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .fetch_optional(&mut *conn)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    require_wishlist(conn, user, &w, need).await?;
+    Ok(w)
+}
+
+/// A live person of the user's own.
+pub async fn require_person(
+    conn: &mut SqliteConnection,
+    user: &AuthUser,
+    id: &str,
+) -> ApiResult<()> {
+    let ok: Option<i64> = sqlx::query_scalar(
+        "SELECT 1 FROM persons WHERE id = ? AND owner_id = ? AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .bind(user.id())
+    .fetch_optional(&mut *conn)
+    .await?;
+    ok.map(|_| ()).ok_or(AppError::NotFound)
 }
 
 /// The user's role on a live list, or `None` if they can't see it.

@@ -3,4 +3,4 @@
 /**
  * Something deleted since the last sync.
  */
-export type Deleted = { kind: 'shop' | 'list' | 'category' | 'item' | 'staple' | 'catalog' | 'product', id: string, };
+export type Deleted = { kind: 'shop' | 'list' | 'category' | 'item' | 'staple' | 'catalog' | 'product' | 'person' | 'wishlist' | 'wish_section' | 'wish_item' | 'claim', id: string, };

@@ -16,6 +16,17 @@
     }
   }
 
+  // Prices on wishes default to this currency (D-18).
+  const CURRENCIES = ['EUR', 'USD', 'GBP', 'SEK', 'NOK', 'DKK', 'PLN', 'CHF']
+  const currency = $derived(typeof session.me?.prefs.currency === 'string' ? session.me.prefs.currency : 'EUR')
+  async function setCurrency(c: string) {
+    try {
+      await session.setPref('currency', c)
+    } catch (err) {
+      toast(message(err), 'error')
+    }
+  }
+
   async function setTheme(t: Theme) {
     try {
       await session.setPref('theme', t === 'system' ? null : t)
@@ -38,6 +49,12 @@
       <option value="system">Same as the device</option>
       <option value="light">Light</option>
       <option value="dark">Dark</option>
+    </select>
+  </label>
+  <label>
+    <span>Currency for wish prices</span>
+    <select value={currency} onchange={(e) => setCurrency(e.currentTarget.value)}>
+      {#each CURRENCIES.includes(currency) ? CURRENCIES : [currency, ...CURRENCIES] as c (c)}<option value={c}>{c}</option>{/each}
     </select>
   </label>
 </section>

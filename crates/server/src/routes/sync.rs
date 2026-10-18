@@ -23,14 +23,15 @@ use tokio_stream::{
 };
 use ts_rs::TS;
 
-use super::{catalog, items, products, shops, staples};
+use super::{catalog, items, products, shops, staples, wishes};
 use crate::{
     AppState,
     auth::AuthUser,
     error::{ApiResult, AppError},
     events,
     models::{
-        CatalogItem, Category, Image, Item, Product, ProductPreference, Shop, ShoppingList, Staple,
+        CatalogItem, Category, Claim, Image, Item, Person, Product, ProductPreference, Shop,
+        ShoppingList, Staple, WishItem, WishSection, Wishlist,
     },
     util::random_token,
     visibility::VISIBLE_LISTS,
@@ -40,7 +41,9 @@ use crate::{
 #[derive(Serialize, TS, utoipa::ToSchema)]
 #[ts(export)]
 pub struct Deleted {
-    #[ts(type = "'shop' | 'list' | 'category' | 'item' | 'staple' | 'catalog' | 'product'")]
+    #[ts(
+        type = "'shop' | 'list' | 'category' | 'item' | 'staple' | 'catalog' | 'product' | 'person' | 'wishlist' | 'wish_section' | 'wish_item' | 'claim'"
+    )]
     pub kind: String,
     pub id: String,
 }
@@ -64,9 +67,19 @@ pub struct ShoppingData {
     pub preferences: Vec<ProductPreference>,
     /// Your pictures in use (for their credits); always all of them.
     pub images: Vec<Image>,
+    /// People you collect gift ideas for (yours only).
+    pub persons: Vec<Person>,
+    /// Wishlists you can see (never a gift list about you).
+    pub wishlists: Vec<Wishlist>,
+    pub wish_sections: Vec<WishSection>,
+    pub wish_items: Vec<WishItem>,
+    /// Claims you may see (never on your own wishlist).
+    pub claims: Vec<Claim>,
     pub deleted: Vec<Deleted>,
     /// Every list you can see now: drop any other you have (e.g. no longer shared with you).
     pub visible_lists: Vec<String>,
+    /// The same for wishlists.
+    pub visible_wishlists: Vec<String>,
 }
 
 async fn deleted(conn: &mut SqliteConnection, uid: &str, since: i64) -> sqlx::Result<Vec<Deleted>> {
@@ -126,12 +139,25 @@ async fn load(state: &AppState, uid: &str, since: i64) -> ApiResult<ShoppingData
         products: products::synced_products(&mut conn, uid, since).await?,
         preferences: products::user_preferences(&mut conn, uid, None).await?,
         images,
+        persons: wishes::user_persons(&mut conn, uid, since).await?,
+        wishlists: wishes::visible_wishlists(&mut conn, uid, since).await?,
+        wish_sections: wishes::visible_sections(&mut conn, uid, since).await?,
+        wish_items: wishes::visible_items(&mut conn, uid, since).await?,
+        claims: wishes::visible_claims(&mut conn, uid, since).await?,
         deleted: if since > 0 {
-            deleted(&mut conn, uid, since).await?
+            let mut d = deleted(&mut conn, uid, since).await?;
+            d.extend(
+                wishes::deleted(&mut conn, uid, since)
+                    .await?
+                    .into_iter()
+                    .map(|(kind, id)| Deleted { kind, id }),
+            );
+            d
         } else {
             vec![]
         },
         visible_lists: visible_list_ids(&mut conn, uid).await?,
+        visible_wishlists: wishes::visible_wishlist_ids(&mut conn, uid).await?,
     })
 }
 
@@ -209,19 +235,24 @@ impl FromRequestParts<AppState> for Listener {
     }
 }
 
+/// What `uid` can see now: lists, wishlists, and wishlists whose claims they see.
+async fn seen(state: &AppState, uid: &str) -> ApiResult<events::Seen> {
+    let mut conn = state.db.read.acquire().await?;
+    let set = |v: Vec<String>| v.into_iter().collect::<HashSet<_>>();
+    Ok(events::Seen {
+        lists: set(visible_list_ids(&mut conn, uid).await?),
+        wishlists: set(wishes::visible_wishlist_ids(&mut conn, uid).await?),
+        claims: set(wishes::claims_visible_ids(&mut conn, uid).await?),
+    })
+}
+
 #[utoipa::path(get, path = "/events", tag = "shopping", summary = "Server-sent events: `change` with the new rev when something you can see changed (then call /sync), `resync` when you should sync anyway", params(("ticket" = Option<String>, Query, description = "From POST /events/ticket, for clients that can't send the cookie or Authorization header")), responses((status = 200, description = "text/event-stream")))]
 pub async fn events(
     State(state): State<AppState>,
     Listener(me): Listener,
 ) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
     let rx = state.bus.subscribe();
-    let visible: HashSet<String> = {
-        let mut conn = state.db.read.acquire().await?;
-        visible_list_ids(&mut conn, &me)
-            .await?
-            .into_iter()
-            .collect()
-    };
+    let visible = seen(&state, &me).await?;
     let rev = events::current_rev(&state.db.read).await?;
     let hello = stream::once(async move {
         Ok::<_, Infallible>(
@@ -238,14 +269,9 @@ pub async fn events(
             loop {
                 match rx.next().await? {
                     Ok(c) => {
-                        let now = if c.users.contains(&me) {
-                            match state.db.read.acquire().await {
-                                Ok(mut conn) => visible_list_ids(&mut conn, &me)
-                                    .await
-                                    .map(|v| v.into_iter().collect())
-                                    .unwrap_or_else(|_| visible.clone()),
-                                Err(_) => visible.clone(),
-                            }
+                        // Access may have changed: look again, at delivery time.
+                        let now = if c.may_change_access(&me, &visible) {
+                            seen(&state, &me).await.unwrap_or_else(|_| visible.clone())
                         } else {
                             visible.clone()
                         };

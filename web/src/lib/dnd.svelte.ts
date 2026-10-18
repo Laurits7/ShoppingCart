@@ -17,6 +17,9 @@ export type DragItem =
   | { kind: 'list'; id: string; shopId: string }
   | { kind: 'shop'; id: string }
   | { kind: 'staple'; id: string; shopId: string }
+  | { kind: 'wish'; id: string; wishlistId: string }
+  | { kind: 'wish_section'; id: string; wishlistId: string }
+  | { kind: 'wishlist'; id: string }
 
 export type DropAt = { x: number; y: number; el: HTMLElement }
 

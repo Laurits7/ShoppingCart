@@ -79,6 +79,12 @@ pub async fn purge(pool: &SqlitePool) -> sqlx::Result<()> {
         "DELETE FROM catalog_items WHERE deleted_at < ?1",
         "DELETE FROM lists WHERE deleted_at < ?1 AND id NOT IN (SELECT list_id FROM items) AND id NOT IN (SELECT list_id FROM categories)",
         "DELETE FROM shops WHERE deleted_at < ?1 AND id NOT IN (SELECT shop_id FROM lists) AND id NOT IN (SELECT shop_id FROM staples)",
+        "DELETE FROM claims WHERE deleted_at < ?1 OR wish_item_id IN (SELECT id FROM wish_items WHERE deleted_at < ?1)",
+        "DELETE FROM wish_items WHERE deleted_at < ?1",
+        "DELETE FROM wish_sections WHERE deleted_at < ?1",
+        "DELETE FROM shares WHERE deleted_at < ?1",
+        "DELETE FROM wishlists WHERE deleted_at < ?1 AND id NOT IN (SELECT wishlist_id FROM wish_items) AND id NOT IN (SELECT wishlist_id FROM wish_sections)",
+        "DELETE FROM persons WHERE deleted_at < ?1 AND id NOT IN (SELECT recipient_person_id FROM wishlists WHERE recipient_person_id IS NOT NULL)",
     ] {
         sqlx::query(sql).bind(&old).execute(&mut *tx).await?;
     }
