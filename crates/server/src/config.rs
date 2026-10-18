@@ -28,6 +28,34 @@ pub struct Config {
     pub session_days: i64,
     /// The address people use (e.g. `https://cart.example.org`), for links given to other apps.
     pub public_url: Option<String>,
+    /// Largest picture upload accepted, in bytes (`MAX_UPLOAD_MB`).
+    pub max_upload_bytes: usize,
+    /// Where product pictures and brands are looked up; `None` when `PRODUCT_LOOKUP=off`.
+    pub product_lookup: Option<LookupConfig>,
+}
+
+/// The product lookup provider's addresses (Open Food Facts; tests use a fake server).
+#[derive(Debug, Clone)]
+pub struct LookupConfig {
+    /// Full-text search (search-a-licious): `GET {search_url}?q=…`.
+    pub search_url: String,
+    /// One product by barcode: `GET {product_url}/{code}.json`.
+    pub product_url: String,
+    /// A product's public page, credited next to its pictures: `{page_url}/{code}`.
+    pub page_url: String,
+    /// Pictures are only ever downloaded from URLs starting with one of these.
+    pub image_prefixes: Vec<String>,
+}
+
+impl LookupConfig {
+    pub fn open_food_facts() -> Self {
+        Self {
+            search_url: "https://search.openfoodfacts.org/search".into(),
+            product_url: "https://world.openfoodfacts.org/api/v3/product".into(),
+            page_url: "https://world.openfoodfacts.org/product".into(),
+            image_prefixes: vec!["https://images.openfoodfacts.org/".into()],
+        }
+    }
 }
 
 impl Config {
@@ -47,6 +75,19 @@ impl Config {
         if !(1..=3650).contains(&session_days) {
             bail!("SESSION_DAYS must be between 1 and 3650");
         }
+        let max_upload_mb: usize = var("MAX_UPLOAD_MB")
+            .map(|v| v.parse())
+            .transpose()
+            .context("MAX_UPLOAD_MB")?
+            .unwrap_or(8);
+        if !(1..=64).contains(&max_upload_mb) {
+            bail!("MAX_UPLOAD_MB must be between 1 and 64");
+        }
+        let product_lookup = match var("PRODUCT_LOOKUP").as_deref().unwrap_or("openfoodfacts") {
+            "off" | "false" | "0" => None,
+            "openfoodfacts" => Some(LookupConfig::open_food_facts()),
+            other => bail!("PRODUCT_LOOKUP must be openfoodfacts or off (got {other:?})"),
+        };
         Ok(Self {
             bind: var("BIND")
                 .unwrap_or_else(|| "0.0.0.0".into())
@@ -64,6 +105,8 @@ impl Config {
             cookie_secure,
             session_days,
             public_url: var("PUBLIC_URL").map(|u| u.trim_end_matches('/').to_string()),
+            max_upload_bytes: max_upload_mb * 1024 * 1024,
+            product_lookup,
         })
     }
 
@@ -79,6 +122,9 @@ impl Config {
             cookie_secure: CookieSecure::Auto,
             session_days: 30,
             public_url: None,
+            max_upload_bytes: 8 * 1024 * 1024,
+            // Tests never reach the internet; lookup tests plug in a fake provider.
+            product_lookup: None,
         }
     }
 }

@@ -3,7 +3,7 @@
 > Companion to [`SPEC.md`](SPEC.md). Section numbers like §6.8 refer to the spec.
 > Status (2026-10-18): Phase 0 (spec, plan, docs skeleton) done. Part A and all Part C defaults
 > confirmed (D-12..D-21). **Phase 1 done** (D-22..D-26). **Phase 2 chunks done** (D-27..D-34); gate needs the owner's
-> manual check. **Phase 3 chunks done** (D-35..D-38). **Next: Phase 3b (products and pictures).**
+> manual check. **Phase 3 chunks done** (D-35..D-38). **Phase 3b chunks done** (D-39..D-43). **Next: Phase 4 (live sync and sharing).**
 > Legend: `[x]` done · `[~]` partly done (remaining work noted) · `[ ]` not started.
 
 ## How to use this plan
@@ -110,20 +110,22 @@ SQL) → SQLite (WAL, one writer pool of 1, reader pool) → event log row → S
       manual phone/desktop check (long-press, keyboard, screen reader) still to do.
 
 ### Phase 3b. Products and pictures (§6.4b)
-- [ ] **3b.1 Images**: upload endpoint with type sniffing and limits, resize/re-encode to two
+- [x] **3b.1 Images**: upload endpoint with type sniffing and limits, resize/re-encode to two
       WebP sizes (`image` crate), content-addressed storage in `data/images`, authorised serving
       with long cache headers, orphan cleanup job; camera capture in the UI.
-- [ ] **3b.2 Products**: products per catalogue item (brand, name, barcode, picture), preferred
+- [x] **3b.2 Products**: products per catalogue item (brand, name, barcode, picture), preferred
       product globally and per shop, `product_id` on items and staples, resolution rules in
       `domain::products` with tests; product rows in suggestions; thumbnails on list rows,
       large view, brand chooser sheet.
-- [ ] **3b.3 Open Food Facts lookup** (needs Q-10): server-side search by name and barcode,
+- [x] **3b.3 Open Food Facts lookup** (needs Q-10): server-side search by name and barcode,
       result picker, picture download through the image pipeline, attribution, cache,
-      `PRODUCT_LOOKUP=off`; tests with a fake provider.
-- [ ] **3b.4 Barcode scanning**: `BarcodeDetector` over HTTPS with typed fallback; scan to look up
+      `PRODUCT_LOOKUP=off`; tests with a fake provider. Pictures are JPEG (D-39).
+- [x] **3b.4 Barcode scanning**: `BarcodeDetector` over HTTPS with typed fallback; scan to look up
       or to add to the current list.
-- [ ] **3b.5 Docs**: "Products and pictures" guide.
-- [ ] **Phase 3b gate**.
+- [x] **3b.5 Docs**: "Products and pictures" guide.
+- [~] **Phase 3b gate**: checks, tests, docs, docker run with a live Open Food Facts search and
+      import, measurements done (9 MB image, 5.7 MiB, 55 KB web: close to the 60 KB budget);
+      the manual check (camera photo, barcode scan over HTTPS) still to do.
 
 ### Phase 4. Live sync and sharing
 - [ ] **4.1 Event log, `/sync`, SSE** with per-subscriber visibility filter and SSE tickets.

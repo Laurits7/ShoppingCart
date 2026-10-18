@@ -15,7 +15,14 @@
     onedit,
     onstaples,
     onmenu,
-  }: { list: ShoppingList; onedit: (item: Item, focus?: 'amount') => void; onstaples: (list: ShoppingList) => void; onmenu: (list: ShoppingList) => void } = $props()
+    onpicture,
+  }: {
+    list: ShoppingList
+    onedit: (item: Item, focus?: 'amount') => void
+    onstaples: (list: ShoppingList) => void
+    onmenu: (list: ShoppingList) => void
+    onpicture: (item: Item) => void
+  } = $props()
 
   const readonly = $derived(list.role === 'viewer')
   const sections = $derived(shopping.sections(list.id))
@@ -66,7 +73,7 @@
       {#each sections as s (s.id)}
         {#if sections.length > 1 || s.id !== 'other'}<div class="cat" aria-hidden="true">{s.name}</div>{/if}
         <ul use:dropList={itemDrop(s.id === 'other' ? null : s.id)}>
-          {#each s.items as item (item.id)}<ItemRow {item} {readonly} {onedit} />{/each}
+          {#each s.items as item (item.id)}<ItemRow {item} {readonly} {onedit} {onpicture} />{/each}
         </ul>
       {/each}
     {:else}
@@ -85,7 +92,7 @@
       </div>
       {#if showCart}
         <ul class="cart">
-          {#each cart as item (item.id)}<ItemRow {item} {readonly} {onedit} />{/each}
+          {#each cart as item (item.id)}<ItemRow {item} {readonly} {onedit} {onpicture} />{/each}
         </ul>
       {/if}
     {/if}

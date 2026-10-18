@@ -9,10 +9,16 @@ shoppingcart-domain = { path = "../domain" }
 anyhow = "1"
 argon2 = "0.5"
 axum = { version = "0.8", features = ["macros"] }
+# Only the JPEG/PNG/WebP decoders and the JPEG encoder (pictures are re-encoded, §7.4).
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 base64 = "0.22"
 chrono.workspace = true
 mime_guess = "2"
 rand = "0.8"
+# Outgoing HTTPS for product lookups (§6.4b): rustls with ring and bundled roots, no C crypto
+# and no system certificate store needed in the scratch image.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rust-embed = "8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -25,6 +31,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ts-rs = "12"
 ulid = "1"
 utoipa = "5"
+webpki-roots = "1"
 
 [dev-dependencies]
 http-body-util = "0.1"

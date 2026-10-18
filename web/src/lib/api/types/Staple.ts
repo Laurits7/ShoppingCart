@@ -3,7 +3,7 @@
 /**
  * One of a shop's usual purchases (SPEC §6.3).
  */
-export type Staple = { id: string, shop_id: string, catalog_item_id: string | null, name: string, amount: number, unit: string | null, 
+export type Staple = { id: string, shop_id: string, catalog_item_id: string | null, product_id: string | null, name: string, amount: number, unit: string | null, 
 /**
  * Added into the list's category of this name, if it has one.
  */

@@ -80,7 +80,7 @@ of working.
 - **Backend: Rust**: Axum 0.8, Tokio, **SQLite via sqlx** with migrations, `argon2` for
   passwords, `utoipa` for the OpenAPI document, `ts-rs` to generate TypeScript types, `reqwest`
   (rustls, `ring`) for outgoing integration and product-lookup calls, the `image` crate (only
-  the JPEG/PNG/WebP decoders) to resize pictures into small WebP/JPEG thumbnails. A static **musl** binary.
+  the JPEG/PNG/WebP decoders and the JPEG encoder) to resize pictures into small JPEG files (D-39). A static **musl** binary.
 - **Frontend: Svelte 5 + Vite as a static SPA** (no SvelteKit, see Streamline D-25), with a tiny
   history router, a client-side store and an outbox for optimistic writes. Built assets are
   **embedded in the binary** (`rust-embed`), so it is one process and one container.
@@ -164,7 +164,7 @@ owner shared it there (D-5).
   **ProductPreference** `catalog_item_id`, `shop_id?`, `product_id`).
   Items and staples get an optional `product_id`: empty means "any milk", set means "milk by X".
 - **Image** (no `rev`): owner, `sha256` (dedup), `mime`, `width`, `height`, `bytes`, stored as
-  `data/images/<sha256>.webp` (thumbnail ≈ 160 px) and `…-l.webp` (≈ 640 px). Never the
+  `data/images/<sha256>.jpg` (thumbnail ≈ 160 px) and `…-l.jpg` (≈ 640 px, D-39). Never the
   original upload. Also usable as a picture for a catalogue item without a brand.
 
 ### 5.3 Wishlists

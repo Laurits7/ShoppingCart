@@ -3,6 +3,9 @@
   import type { CatalogItem } from '../../lib/api/types/CatalogItem'
   import { normalizeName } from '../../lib/catalog'
   import Icon from '../../lib/components/Icon.svelte'
+  import ScanSheet from '../../lib/components/ScanSheet.svelte'
+  import Thumb from '../../lib/components/Thumb.svelte'
+  import { label } from '../../lib/products'
   import { shopping } from '../../lib/shopping.svelte'
 
   // Compact: inside a list card on the summary page, without the frequent-item chips.
@@ -10,12 +13,13 @@
   let text = $state('')
   let selected = $state(-1)
   let input: HTMLInputElement
+  let scanOpen = $state(false)
 
   const suggestions = $derived(text.trim() ? shopping.suggest(text, shopId) : [])
   const chips = $derived(compact || text.trim() ? [] : shopping.frequentFor(listId))
-  const onList = (c: CatalogItem) => {
+  const onList = (c: CatalogItem, productId: string | null = null) => {
     const n = normalizeName(c.name)
-    return shopping.itemsOf(listId).find((i) => !i.checked_at && normalizeName(i.name) === n)
+    return shopping.itemsOf(listId).find((i) => !i.checked_at && normalizeName(i.name) === n && (i.product_id ?? null) === productId)
   }
 
   $effect(() => {
@@ -76,7 +80,11 @@
       aria-controls="suggestions-{listId}"
       aria-activedescendant={selected >= 0 ? `suggestion-${listId}-${selected}` : undefined}
     />
-    {#if text}<button type="button" class="icon-btn" aria-label="Clear" onclick={() => ((text = ''), input.focus())}><Icon name="x" size={18} /></button>{/if}
+    {#if text}
+      <button type="button" class="icon-btn" aria-label="Clear" onclick={() => ((text = ''), input.focus())}><Icon name="x" size={18} /></button>
+    {:else}
+      <button type="button" class="icon-btn" aria-label="Scan a barcode" title="Scan a barcode" onclick={() => (scanOpen = true)}><Icon name="barcode" size={18} /></button>
+    {/if}
   </div>
   {#if suggestions.length}
     <ul id="suggestions-{listId}" role="listbox" aria-label="Suggestions">
@@ -90,6 +98,17 @@
             {#if open}<span class="badge on">{formatAmount(open.amount, open.unit)} on list</span>{:else}<span class="muted small">{formatAmount(c.amount, c.unit)}</span>{/if}
           </button>
         </li>
+        {#each shopping.productsOf(c.id).slice(0, 3) as p (p.id)}
+          {@const pOpen = onList(c, p.id)}
+          <li role="option" aria-selected="false" class="product">
+            <button type="button" onclick={() => (shopping.add(listId, { name: c.name, amount: null, unit: null, productId: p.id }), input.focus())}>
+              {#if p.image_id}<Thumb id={p.image_id} size={28} />{/if}
+              <span class="name">{c.name} · {label(p.brand, p.name)}</span>
+              <span class="spacer"></span>
+              {#if pOpen}<span class="badge on">{formatAmount(pOpen.amount, pOpen.unit)} on list</span>{/if}
+            </button>
+          </li>
+        {/each}
       {/each}
     </ul>
   {:else if chips.length}
@@ -100,6 +119,8 @@
     </div>
   {/if}
 </form>
+
+<ScanSheet bind:open={scanOpen} title="Scan to add" onfound={(code) => shopping.addScanned(listId, code)} />
 
 <style>
   .quick {
@@ -163,6 +184,11 @@
   ul button:hover,
   ul button.selected {
     background: var(--surface-2);
+  }
+  li.product button {
+    padding-left: 28px;
+    min-height: 40px;
+    font-size: 14px;
   }
   .spacer {
     flex: 1;

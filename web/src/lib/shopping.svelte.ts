@@ -3,13 +3,17 @@
 // answer replaces the local guess. If the server refuses, the store reloads. (The persistent
 // outbox for flaky connections comes in Phase 4.)
 
-import { api, message } from './api/client'
+import { api, ApiError, message } from './api/client'
 import type { AddedItem } from './api/types/AddedItem'
 import type { CatalogItem } from './api/types/CatalogItem'
 import type { Category } from './api/types/Category'
 import type { Finished } from './api/types/Finished'
+import type { Image } from './api/types/Image'
 import type { Item } from './api/types/Item'
 import type { ListBundle } from './api/types/ListBundle'
+import type { LookupResult } from './api/types/LookupResult'
+import type { Product } from './api/types/Product'
+import type { ProductPreference } from './api/types/ProductPreference'
 import type { Shop } from './api/types/Shop'
 import type { ShopBundle } from './api/types/ShopBundle'
 import type { ShoppingData } from './api/types/ShoppingData'
@@ -20,6 +24,7 @@ import { combine, formatAmount, step as stepAmount } from './amount'
 import { frequent as rankFrequent, normalizeName, rank, type Usage } from './catalog'
 import { neighbours } from './dndmath'
 import { keyBetween } from './order'
+import { label as productLabel, picture, preferred, type PictureFrom } from './products'
 import { session } from './session.svelte'
 import { toast } from './toast.svelte'
 import { ulid } from './ulid'
@@ -48,7 +53,10 @@ const lastKey = (rows: Positioned[]) => rows.reduce<string>((m, r) => (r.positio
 /** A category of a list with its open items ("Other" has id 'other'). */
 export type Section = { id: string; name: string; items: Item[] }
 
-export type NewItem = { name: string; amount: number | null; unit: string | null; categoryId?: string | null }
+export type NewItem = { name: string; amount: number | null; unit: string | null; categoryId?: string | null; productId?: string | null }
+
+/** What an item shows: its picture (and where it comes from) and its brand line. */
+export type Look = { image: string | null; from: PictureFrom | null; brand: string | null }
 
 class ShoppingStore {
   loaded = $state(false)
@@ -58,6 +66,9 @@ class ShoppingStore {
   items = $state<Item[]>([])
   staples = $state<Staple[]>([])
   catalog = $state<CatalogItem[]>([])
+  products = $state<Product[]>([])
+  preferences = $state<ProductPreference[]>([])
+  images = $state<Image[]>([])
   /** Requests in flight per item: an older answer must not overwrite a newer local change. */
   #pending = new Map<string, number>()
 
@@ -70,6 +81,9 @@ class ShoppingStore {
     this.items = []
     this.staples = []
     this.catalog = []
+    this.products = []
+    this.preferences = []
+    this.images = []
   }
 
   async load() {
@@ -80,6 +94,9 @@ class ShoppingStore {
     this.items = d.items
     this.staples = d.staples
     this.catalog = d.catalog
+    this.products = d.products
+    this.preferences = d.preferences
+    this.images = d.images
     this.loaded = true
   }
 
@@ -153,6 +170,126 @@ class ShoppingStore {
     return this.catalog.find((c) => normalizeName(c.name) === n)
   }
 
+  // ---- products and pictures ------------------------------------------------------------
+
+  productsOf(catalogId: string | null | undefined) {
+    return this.products.filter((p) => p.catalog_item_id === catalogId).sort(byPosition)
+  }
+  product(id: string | null | undefined) {
+    return this.products.find((p) => p.id === id)
+  }
+  /** The catalogue entry an item belongs to (by link, else by name). */
+  entryOf(item: { catalog_item_id: string | null; name: string }) {
+    return this.catalog.find((c) => c.id === item.catalog_item_id) ?? this.known(item.name)
+  }
+  /** The preferred product of a catalogue item at a shop (or everywhere). */
+  preferredOf(catalogId: string, shopId: string | null) {
+    const at = (s: string | null) => this.preferences.find((p) => p.catalog_item_id === catalogId && p.shop_id === s)?.product_id
+    return preferred(shopId ? at(shopId) : undefined, at(null))
+  }
+  /** The picture and brand line an item shows (SPEC §6.4b). */
+  look(item: Item): Look {
+    const entry = this.entryOf(item)
+    const shopId = this.list(item.list_id)?.shop_id ?? null
+    const pinned = item.product_id ? this.product(item.product_id) : undefined
+    const prefId = !item.product_id && entry ? this.preferredOf(entry.id, shopId) : null
+    const pref = prefId ? this.product(prefId) : undefined
+    const pic = picture(item.product_id ? (pinned?.image_id ?? null) : undefined, pref ? pref.image_id : undefined, entry?.image_id)
+    const brand = pinned ? productLabel(pinned.brand, pinned.name) : pref ? `usually ${productLabel(pref.brand, pref.name)}` : null
+    return { image: pic?.image ?? null, from: pic?.from ?? null, brand }
+  }
+  /** Credit for a picture from Open Food Facts (CC BY-SA), if it is one. */
+  credit(imageId: string): string | null {
+    const img = this.images.find((i) => i.id === imageId)
+    return img?.source === 'openfoodfacts' ? (img.source_ref ?? 'https://world.openfoodfacts.org') : null
+  }
+
+  async uploadImage(file: Blob): Promise<Image | undefined> {
+    const img = await this.#send(() => api.upload<Image>('/images', file))
+    if (img) upsert(this.images, img)
+    return img
+  }
+
+  async createProduct(catalogId: string, p: { brand: string; name: string; barcode: string | null; image_id: string | null }) {
+    const res = await this.#send(() => api.post<Product>(`/catalog/${catalogId}/products`, { id: ulid(), ...p }))
+    if (res) upsert(this.products, res)
+    return res
+  }
+
+  async patchProduct(p: Product, patch: { brand?: string; name?: string; barcode?: string | null; image_id?: string | null }) {
+    const res = await this.#send(() => api.patch<Product>(`/products/${p.id}`, patch))
+    if (res) upsert(this.products, res)
+    return res
+  }
+
+  async deleteProduct(p: Product) {
+    removeWhere(this.products, (x) => x.id === p.id)
+    removeWhere(this.preferences, (x) => x.product_id === p.id)
+    for (const i of this.items) if (i.product_id === p.id) i.product_id = null
+    for (const s of this.staples) if (s.product_id === p.id) s.product_id = null
+    await this.#send(() => api.del(`/products/${p.id}`))
+  }
+
+  async setPreferred(catalogId: string, productId: string | null, shopId: string | null) {
+    const res = await this.#send(() => api.put<ProductPreference[]>(`/catalog/${catalogId}/preferred`, { product_id: productId, shop_id: shopId }))
+    if (!res) return
+    removeWhere(this.preferences, (p) => p.catalog_item_id === catalogId)
+    this.preferences.push(...res)
+  }
+
+  /** Pin an item to a product, or make it generic again (null). */
+  pin(item: Item, productId: string | null) {
+    item.product_id = productId
+    this.#sendItem(item.id, () => api.patch<Item>(`/items/${item.id}`, { product_id: productId }), (res) => upsert(this.items, res))
+  }
+
+  lookup(q: string) {
+    return api.get<LookupResult[]>(`/lookup?q=${encodeURIComponent(q)}`)
+  }
+  lookupBarcode(code: string) {
+    return api.get<LookupResult>(`/lookup/barcode/${encodeURIComponent(code)}`)
+  }
+  /** Use a lookup result: a new product of the catalogue item (default), its picture for an
+   * existing product, or (pictureOnly) for the catalogue item itself. */
+  async importLookup(code: string, catalogId: string, opts: { productId?: string; pictureOnly?: boolean } = {}) {
+    const res = await this.#send(() =>
+      api.post<Product | null>(`/lookup/${code}/import`, { catalog_item_id: catalogId, product_id: opts.productId, picture_only: !!opts.pictureOnly }),
+    )
+    if (res === undefined) return undefined
+    if (res) upsert(this.products, res)
+    // The new picture's credit and (for pictureOnly) the catalogue item's picture.
+    await this.load().catch(() => {})
+    return res
+  }
+
+  /** Add what a barcode is: your product with that barcode, or one found on Open Food Facts
+   * (which becomes a product of a new or existing catalogue item). */
+  async addScanned(listId: string, code: string) {
+    const mine = this.products.find((p) => p.barcode === code)
+    const entry = mine && this.catalog.find((c) => c.id === mine.catalog_item_id)
+    if (mine && entry) {
+      this.add(listId, { name: entry.name, amount: null, unit: null, productId: mine.id })
+      toast(`Added ${entry.name} · ${productLabel(mine.brand, mine.name)}`)
+      return
+    }
+    let found: LookupResult
+    try {
+      found = await this.lookupBarcode(code)
+    } catch (e) {
+      toast(e instanceof ApiError && e.status === 404 ? `${code} isn't on Open Food Facts; add it by name instead` : message(e), 'error')
+      return
+    }
+    const name = found.name || found.brand
+    const added = await this.#send(() => api.post<AddedItem>(`/lists/${listId}/items`, { id: ulid(), name }))
+    if (!added) return
+    upsert(this.items, added.item)
+    const catalogId = added.item.catalog_item_id
+    const product = catalogId ? await this.importLookup(code, catalogId) : null
+    const item = this.items.find((i) => i.id === added.item.id)
+    if (product && item) this.pin(item, product.id)
+    toast(`Added ${name}`)
+  }
+
   #usage(c: CatalogItem, shopId: string | null, t: number): Usage {
     return {
       useCount: c.use_count,
@@ -214,10 +351,12 @@ class ShoppingStore {
       categoryId = this.categoriesOf(listId).find((c) => normalizeName(c.name) === want)?.id ?? null
     }
     const id = ulid()
-    const body = { id, name: input.name, amount, unit: unit ?? '', step, category_id: categoryId }
+    const productId = input.productId ?? null
+    const body = { id, name: input.name, amount, unit: unit ?? '', step, category_id: categoryId, product_id: productId }
     const norm = normalizeName(input.name)
+    // The same thing of another brand gets a row of its own.
     const dup = this.itemsOf(listId)
-      .filter((i) => !i.checked_at && normalizeName(i.name) === norm)
+      .filter((i) => !i.checked_at && normalizeName(i.name) === norm && (i.product_id ?? null) === productId)
       .sort(byPosition)
       .find((i) => combine(i.amount, i.unit, amount, unit) !== null)
     const ts = now()
@@ -232,6 +371,7 @@ class ShoppingStore {
         list_id: listId,
         category_id: categoryId,
         catalog_item_id: known?.id ?? null,
+        product_id: productId,
         name: input.name,
         amount,
         unit,
@@ -259,7 +399,7 @@ class ShoppingStore {
     let c = this.known(name)
     if (!c) {
       // Provisional until the server's id arrives with the item (or the next load).
-      c = { id: ulid(), name, category_name: null, amount, unit, step: null, use_count: 0, last_used_at: null, shop_id: null, hidden: false, shops: [], created_at: ts, updated_at: ts, rev: 0 }
+      c = { id: ulid(), name, category_name: null, amount, unit, step: null, use_count: 0, last_used_at: null, shop_id: null, hidden: false, image_id: null, shops: [], created_at: ts, updated_at: ts, rev: 0 }
       this.catalog.push(c)
       c = this.catalog[this.catalog.length - 1]
     }
@@ -356,7 +496,7 @@ class ShoppingStore {
 
   addStaples(listId: string, staples: Staple[]) {
     const sent = staples.map((s) => {
-      const r = this.#applyAdd(listId, { name: s.name, amount: s.amount, unit: s.unit, categoryId: this.#categoryNamed(listId, s.category_name) })
+      const r = this.#applyAdd(listId, { name: s.name, amount: s.amount, unit: s.unit, categoryId: this.#categoryNamed(listId, s.category_name), productId: s.product_id })
       return { staple_id: s.id, id: r.id }
     })
     if (staples.length) toast(`Added ${staples.length} staple${staples.length === 1 ? '' : 's'}`)
@@ -370,10 +510,10 @@ class ShoppingStore {
     return this.categoriesOf(listId).find((c) => normalizeName(c.name) === want)?.id
   }
 
-  async createStaple(shopId: string, s: { name: string; amount: number; unit: string | null; category_name: string | null }) {
+  async createStaple(shopId: string, s: { name: string; amount: number; unit: string | null; category_name: string | null; product_id?: string | null }) {
     const id = ulid()
     const ts = now()
-    this.staples.push({ id, shop_id: shopId, catalog_item_id: null, ...s, position: keyBetween(lastKey(this.staplesOf(shopId)), null), created_at: ts, updated_at: ts, rev: 0 })
+    this.staples.push({ id, shop_id: shopId, catalog_item_id: null, ...s, product_id: s.product_id ?? null, position: keyBetween(lastKey(this.staplesOf(shopId)), null), created_at: ts, updated_at: ts, rev: 0 })
     const res = await this.#send(() => api.post<Staple>(`/shops/${shopId}/staples`, { id, ...s, unit: s.unit ?? '' }))
     if (res) upsert(this.staples, res)
   }
@@ -552,7 +692,7 @@ class ShoppingStore {
     this.catalog = await api.get<CatalogItem[]>('/catalog')
   }
 
-  async patchCatalog(c: CatalogItem, patch: { name?: string; category_name?: string | null; amount?: number; unit?: string | null; step?: number | null; hidden?: boolean }) {
+  async patchCatalog(c: CatalogItem, patch: { name?: string; category_name?: string | null; amount?: number; unit?: string | null; step?: number | null; hidden?: boolean; image_id?: string | null }) {
     const body = { ...patch, ...('unit' in patch ? { unit: patch.unit ?? '' } : {}) }
     const res = await this.#send(() => api.patch<CatalogItem>(`/catalog/${c.id}`, body))
     if (res) upsert(this.catalog, res)

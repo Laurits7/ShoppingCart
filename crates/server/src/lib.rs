@@ -4,6 +4,8 @@ pub mod auth;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod images;
+pub mod lookup;
 pub mod models;
 pub mod positions;
 pub mod routes;
@@ -21,6 +23,8 @@ pub struct App {
     pub db: db::Db,
     /// Sign-in attempts per key (username or IP): (count, window start).
     pub login_failures: Mutex<HashMap<String, (u32, Instant)>>,
+    /// For product lookups; `None` when they're switched off.
+    pub http: Option<reqwest::Client>,
 }
 
 pub type AppState = Arc<App>;
@@ -29,10 +33,15 @@ pub type AppState = Arc<App>;
 pub async fn build(config: config::Config) -> anyhow::Result<(axum::Router, AppState)> {
     check_data_dir(&config.data_dir)?;
     let db = db::Db::open(&config.data_dir.join("shoppingcart.db")).await?;
+    let http = match config.product_lookup {
+        Some(_) => Some(lookup::client()?),
+        None => None,
+    };
     let state = Arc::new(App {
         config,
         db,
         login_failures: Mutex::new(HashMap::new()),
+        http,
     });
     auth::bootstrap_admin(&state).await?;
     Ok((routes::router(state.clone()), state))
@@ -78,8 +87,8 @@ pub async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Hourly housekeeping: drop expired sessions, tombstones older than 30 days and old
-/// duplicate-guard records.
+/// Hourly housekeeping: drop expired sessions, tombstones older than 30 days, old
+/// duplicate-guard records and pictures nothing uses.
 fn spawn_cleanup(state: AppState) {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
@@ -94,6 +103,12 @@ fn spawn_cleanup(state: AppState) {
             }
             if let Err(e) = db::purge(&state.db.write).await {
                 tracing::warn!("tombstone cleanup failed: {e}");
+            }
+            if let Err(e) = images::purge_orphans(&state).await {
+                tracing::warn!("picture cleanup failed: {e}");
+            }
+            if let Err(e) = lookup::purge(&state).await {
+                tracing::warn!("lookup cache cleanup failed: {e}");
             }
         }
     });

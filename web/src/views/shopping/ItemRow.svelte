@@ -2,6 +2,7 @@
   import { formatAmount } from '../../lib/amount'
   import type { Item } from '../../lib/api/types/Item'
   import Icon from '../../lib/components/Icon.svelte'
+  import Thumb from '../../lib/components/Thumb.svelte'
   import { draggable } from '../../lib/dnd.svelte'
   import { shopping } from '../../lib/shopping.svelte'
 
@@ -11,6 +12,7 @@
     onedit,
     selected,
     onselect,
+    onpicture,
   }: {
     item: Item
     readonly?: boolean
@@ -18,7 +20,10 @@
     /** Defined while picking items (to move them): whether this one is picked. */
     selected?: boolean
     onselect?: (item: Item) => void
+    /** Show the item's picture large. */
+    onpicture?: (item: Item) => void
   } = $props()
+  const look = $derived(shopping.look(item))
   const checked = $derived(!!item.checked_at)
   const amount = $derived(formatAmount(item.amount, item.unit))
   const selecting = $derived(selected !== undefined)
@@ -46,9 +51,13 @@
       <span class="box"><Icon name={checked ? 'checkCircle' : 'circle'} size={24} /></span>
       <span class="text">
         <span class="name">{item.name}</span>
+        {#if look.brand}<span class="brand" class:pinned={!!item.product_id}>{look.brand}</span>{/if}
         {#if item.note}<span class="note">{item.note}</span>{/if}
       </span>
     </button>
+    {#if look.image}
+      <button class="thumb" data-nodrag aria-label="Picture of {item.name}" onclick={() => onpicture?.(item)}><Thumb id={look.image} size={40} /></button>
+    {/if}
     {#if checked || readonly}
       <span class="amount static" aria-label="Amount">{amount}</span>
     {:else}
@@ -115,6 +124,26 @@
   .checked .name {
     color: var(--muted);
     text-decoration: line-through;
+  }
+  .brand {
+    font-size: 13px;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  .brand.pinned {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .checked .brand {
+    color: var(--muted);
+  }
+  .thumb {
+    display: grid;
+    padding: 2px;
+    border-radius: 8px;
+  }
+  .checked .thumb {
+    opacity: 0.5;
   }
   .note {
     font-size: 13px;

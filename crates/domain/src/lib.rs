@@ -4,6 +4,8 @@
 pub mod account;
 pub mod amount;
 pub mod catalog;
+pub mod images;
 pub mod order;
+pub mod products;
 pub mod shopping;
 pub mod visibility;

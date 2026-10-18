@@ -1,7 +1,10 @@
 pub mod account;
 pub mod catalog;
 pub mod households;
+pub mod images;
 pub mod items;
+pub mod lookup;
+pub mod products;
 pub mod shops;
 pub mod staples;
 
@@ -11,7 +14,7 @@ use axum::{
     http::{HeaderValue, header},
     middleware::Next,
     response::Response,
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
 };
 use serde::Serialize;
 use tower_http::{
@@ -48,6 +51,8 @@ use crate::AppState;
         staples::list, staples::create, staples::patch, staples::delete,
         shops::move_shop, shops::move_list, items::move_category, items::move_item, items::move_items,
         staples::move_staple,
+        images::upload, images::get, lookup::search, lookup::barcode, lookup::picture, lookup::import,
+        products::list, products::create, products::patch, products::delete, products::set_preferred,
         catalog::search, catalog::frequent, catalog::patch, catalog::delete, catalog::merge,
     ),
     tags(
@@ -56,6 +61,7 @@ use crate::AppState;
         (name = "households", description = "Households: groups of people to share with"),
         (name = "shopping", description = "Shops, lists, categories, items and staples"),
         (name = "catalog", description = "Your item catalogue: everything you've added before"),
+        (name = "products", description = "Brands, pictures and product lookups"),
     )
 )]
 pub struct ApiDoc;
@@ -229,6 +235,26 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/catalog/{id}",
             patch(catalog::patch).delete(catalog::delete),
+        )
+        .route(
+            "/images",
+            post(images::upload).layer(axum::extract::DefaultBodyLimit::max(
+                state.config.max_upload_bytes,
+            )),
+        )
+        .route("/images/{id}", get(images::get))
+        .route("/lookup", get(lookup::search))
+        .route("/lookup/barcode/{code}", get(lookup::barcode))
+        .route("/lookup/picture/{code}", get(lookup::picture))
+        .route("/lookup/{code}/import", post(lookup::import))
+        .route(
+            "/catalog/{id}/products",
+            get(products::list).post(products::create),
+        )
+        .route("/catalog/{id}/preferred", put(products::set_preferred))
+        .route(
+            "/products/{id}",
+            patch(products::patch).delete(products::delete),
         )
         .route("/openapi.json", get(openapi_json))
         .fallback(|| async { crate::error::AppError::NotFound });

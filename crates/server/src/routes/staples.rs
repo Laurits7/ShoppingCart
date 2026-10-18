@@ -22,7 +22,7 @@ use crate::{
     visibility,
 };
 
-const COLS: &str = "id, shop_id, catalog_item_id, name, amount, unit, category_name, position, created_at, updated_at, rev";
+const COLS: &str = "id, shop_id, catalog_item_id, product_id, name, amount, unit, category_name, position, created_at, updated_at, rev";
 
 /// Live staples of the user's shops, optionally of one shop only.
 pub async fn user_staples(
@@ -82,6 +82,8 @@ pub struct CreateStaple {
     unit: Option<String>,
     /// The category it goes into on a list. Default: the catalogue's.
     category_name: Option<String>,
+    /// One of your products, for a staple of a particular brand.
+    product_id: Option<String>,
 }
 
 #[utoipa::path(post, path = "/shops/{id}/staples", tag = "shopping", summary = "Add a staple to a shop", params(("id" = String, Path, description = "Shop ULID")), request_body = CreateStaple, responses((status = 200, body = Staple), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem), (status = 409, body = crate::error::Problem)))]
@@ -108,6 +110,9 @@ pub async fn create(
             Err(AppError::Conflict("id already in use".into()))
         };
     }
+    if let Some(p) = &c.product_id {
+        visibility::require_product(&mut tx, &user, p).await?;
+    }
     let known = catalog::lookup(&mut tx, user.id(), &normalize_name(&sname)).await?;
     let cat =
         category(c.category_name)?.or_else(|| known.as_ref().and_then(|k| k.category_name.clone()));
@@ -115,12 +120,13 @@ pub async fn create(
     let rev = next_rev(&mut tx).await?;
     let ts = now();
     sqlx::query(
-        "INSERT INTO staples (id, shop_id, catalog_item_id, name, amount, unit, category_name, position, created_at, updated_at, rev)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO staples (id, shop_id, catalog_item_id, product_id, name, amount, unit, category_name, position, created_at, updated_at, rev)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     )
     .bind(&id)
     .bind(&shop_id)
     .bind(known.map(|k| k.id))
+    .bind(&c.product_id)
     .bind(&sname)
     .bind(amt)
     .bind(&unit)
@@ -147,6 +153,10 @@ pub struct PatchStaple {
     #[serde(default, deserialize_with = "double_option")]
     #[schema(value_type = Option<String>)]
     category_name: Option<Option<String>>,
+    /// One of your products, or null for any brand.
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
+    product_id: Option<Option<String>>,
 }
 
 #[utoipa::path(patch, path = "/staples/{id}", tag = "shopping", summary = "Edit a staple", params(("id" = String, Path, description = "ULID")), request_body = PatchStaple, responses((status = 200, body = Staple), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
@@ -178,6 +188,16 @@ pub async fn patch(
     if let Some(u) = p.unit {
         sqlx::query("UPDATE staples SET unit = ? WHERE id = ?")
             .bind(amount::check_unit(u.as_deref().unwrap_or("")).map_err(bad)?)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    if let Some(pid) = p.product_id {
+        if let Some(pid) = &pid {
+            visibility::require_product(&mut tx, &user, pid).await?;
+        }
+        sqlx::query("UPDATE staples SET product_id = ? WHERE id = ?")
+            .bind(pid)
             .bind(&id)
             .execute(&mut *tx)
             .await?;

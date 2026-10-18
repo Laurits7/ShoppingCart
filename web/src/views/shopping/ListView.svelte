@@ -3,6 +3,7 @@
   import type { ShoppingList } from '../../lib/api/types/ShoppingList'
   import { collapsed } from '../../lib/collapsed.svelte'
   import Icon from '../../lib/components/Icon.svelte'
+  import PictureSheet from '../../lib/components/PictureSheet.svelte'
   import { dnd, draggable, dropList, type DragItem } from '../../lib/dnd.svelte'
   import { shopping } from '../../lib/shopping.svelte'
   import ItemRow from './ItemRow.svelte'
@@ -27,6 +28,11 @@
     focus = f
     editOpen = true
   }
+
+  let shown = $state<Item | null>(null)
+  let pictureOpen = $state(false)
+  const showPicture = (item: Item) => ((shown = item), (pictureOpen = true))
+  const shownLook = $derived(shown ? shopping.look(shown) : null)
 
   // Picking several items to move them to another list.
   let picking = $state(false)
@@ -107,7 +113,7 @@
     {#if !isCollapsed}
       <ul class:empty-drop={!s.items.length} use:dropList={itemDrop(s.id === 'other' ? null : s.id)}>
         {#each s.items as item (item.id)}
-          <ItemRow {item} {readonly} onedit={edit} selected={picking ? picked.includes(item.id) : undefined} onselect={pick} />
+          <ItemRow {item} {readonly} onedit={edit} onpicture={showPicture} selected={picking ? picked.includes(item.id) : undefined} onselect={pick} />
         {/each}
       </ul>
     {/if}
@@ -132,12 +138,18 @@
       {#if !readonly}<button class="btn primary small" onclick={() => shopping.finish(list.id)}><Icon name="check" size={16} /> Finish shopping</button>{/if}
     </div>
     <ul>
-      {#each cart as item (item.id)}<ItemRow {item} {readonly} onedit={edit} />{/each}
+      {#each cart as item (item.id)}<ItemRow {item} {readonly} onedit={edit} onpicture={showPicture} />{/each}
     </ul>
   </section>
 {/if}
 
 <ItemSheet item={editing} bind:open={editOpen} {focus} />
+<PictureSheet
+  bind:open={pictureOpen}
+  image={shownLook?.image ?? null}
+  title={shown?.name ?? ''}
+  note={shownLook?.from === 'preferred' ? `Any brand will do; usually ${shownLook.brand?.replace(/^usually /, '')}.` : shownLook?.brand}
+/>
 <MoveSheet bind:open={moveOpen} items={pickedItems} ondone={stopPicking} />
 
 <style>

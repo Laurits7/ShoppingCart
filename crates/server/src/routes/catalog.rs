@@ -24,7 +24,7 @@ use crate::{
     visibility::{self, Need},
 };
 
-const COLS: &str = "id, name, category_name, amount, unit, step, use_count, last_used_at, shop_id, hidden, created_at, updated_at, rev";
+const COLS: &str = "id, name, category_name, amount, unit, step, use_count, last_used_at, shop_id, hidden, image_id, created_at, updated_at, rev";
 
 /// What the catalogue remembers about a name, used to fill in a new item.
 #[derive(sqlx::FromRow)]
@@ -301,6 +301,10 @@ pub struct PatchCatalogItem {
     #[schema(value_type = Option<f64>)]
     step: Option<Option<f64>>,
     hidden: Option<bool>,
+    /// A picture you uploaded, or null for none.
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
+    image_id: Option<Option<String>>,
 }
 
 #[utoipa::path(patch, path = "/catalog/{id}", tag = "catalog", summary = "Rename an entry, set its category, amount, unit or step, or hide it", params(("id" = String, Path, description = "ULID")), request_body = PatchCatalogItem, responses((status = 200, body = CatalogItem), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem), (status = 409, description = "Another entry has that name: merge them", body = crate::error::Problem)))]
@@ -362,6 +366,16 @@ pub async fn patch(
             .execute(&mut *tx)
             .await?;
     }
+    if let Some(img) = p.image_id {
+        if let Some(i) = &img {
+            visibility::require_own_image(&mut tx, &user, i).await?;
+        }
+        sqlx::query("UPDATE catalog_items SET image_id = ? WHERE id = ?")
+            .bind(img)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await?;
+    }
     if let Some(h) = p.hidden {
         sqlx::query("UPDATE catalog_items SET hidden = ? WHERE id = ?")
             .bind(h)
@@ -381,8 +395,16 @@ pub async fn patch(
     Ok(Json(item))
 }
 
-/// Forget catalogue entries; items and staples using them stay, unlinked.
+/// Forget catalogue entries and their products; items and staples using them stay,
+/// unlinked.
 async fn tombstone(conn: &mut SqliteConnection, ids: &[String]) -> sqlx::Result<()> {
+    for id in ids {
+        super::products::tombstone(conn, "catalog_item_id = ?3", id).await?;
+        sqlx::query("DELETE FROM product_preferences WHERE catalog_item_id = ?")
+            .bind(id)
+            .execute(&mut *conn)
+            .await?;
+    }
     let rev = next_rev(conn).await?;
     let ts = now();
     for id in ids {
@@ -475,6 +497,31 @@ pub async fn merge(
              ON CONFLICT (catalog_item_id, shop_id) DO UPDATE SET
                  use_count = use_count + excluded.use_count,
                  last_used_at = MAX(last_used_at, excluded.last_used_at)",
+        )
+        .bind(&m.into)
+        .bind(f)
+        .execute(&mut *tx)
+        .await?;
+        // Its products and preferences come along (the kept entry's preferences win).
+        sqlx::query(
+            "UPDATE products SET catalog_item_id = ?1, updated_at = ?2, rev = ?3 WHERE catalog_item_id = ?4",
+        )
+        .bind(&m.into)
+        .bind(&ts)
+        .bind(rev)
+        .bind(f)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT OR IGNORE INTO product_preferences (catalog_item_id, shop_id, product_id)
+             SELECT ?1, shop_id, product_id FROM product_preferences WHERE catalog_item_id = ?2",
+        )
+        .bind(&m.into)
+        .bind(f)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "UPDATE catalog_items SET image_id = COALESCE(image_id, (SELECT image_id FROM catalog_items WHERE id = ?2)) WHERE id = ?1",
         )
         .bind(&m.into)
         .bind(f)

@@ -20,4 +20,8 @@ shop_id: string | null,
 /**
  * Hidden entries are never suggested.
  */
-hidden: boolean, shops: Array<CatalogShopUse>, created_at: string, updated_at: string, rev: number, };
+hidden: boolean, 
+/**
+ * A picture of the thing itself (no brand).
+ */
+image_id: string | null, shops: Array<CatalogShopUse>, created_at: string, updated_at: string, rev: number, };

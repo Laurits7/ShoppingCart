@@ -123,3 +123,28 @@ All proposed defaults (Q-1 … Q-10) were accepted by the owner on 2026-10-18.
 - **D-38 · Drag between lists on the summary page**: an item dropped on another list's card
   moves there. Only an open list shows empty categories as drop targets while dragging (cards
   would jump around otherwise).
+
+## Phase 3b (2026-10-18)
+
+- **D-39 · Pictures are JPEG, not WebP**: the `image` crate only writes lossless WebP, which is
+  several times larger for photos; a lossy WebP encoder would mean a C library (libwebp). Pictures
+  are stored as JPEG (quality ~80) at ≈160 and ≈640 px: pure Rust, small, shown everywhere.
+  Transparency becomes white. Revises §5.2's `.webp` file names.
+- **D-40 · Picture storage and access**: files are named by the SHA-256 of the original upload
+  (the same picture is stored once); rows are per owner. A picture is visible to its owner and
+  to anyone who can see a list with an item that shows it (pinned product, catalogue item, or a
+  product of that item). Phone photos are turned upright from their EXIF tag before it is
+  dropped. Pictures no product or catalogue item uses are deleted after a day.
+- **D-41 · Open Food Facts usage**: name search uses search-a-licious
+  (`search.openfoodfacts.org/search`), barcodes the v3 product API (v2 is deprecated); both
+  read their docs on 2026-10-18. User-Agent `ShoppingCart/<version> (repository URL)`, no
+  personal e-mail in it. We stay under their limits (8 searches and 12 product reads a minute
+  per server; the provider allows 10 and 15) and cache results, including misses, for a day.
+  Outgoing TLS is rustls with the `ring` provider and bundled Mozilla roots (`webpki-roots`),
+  so no C crypto library and no system certificate store in the `scratch` image.
+- **D-42 · Picker thumbnails through our server**: the result picker shows Open Food Facts
+  pictures fetched by the server (`/lookup/picture/{code}`, only for cached results, served only
+  after the bytes are sniffed as a picture), so the browser never loads third-party images.
+- **D-43 · Barcode adds**: scanning (or typing) a barcode in quick add uses your product with that
+  barcode, else looks it up and adds it as a new product of a new or existing catalogue item.
+  Imports by API/Mealie match a product only by its exact name (§6.4b).

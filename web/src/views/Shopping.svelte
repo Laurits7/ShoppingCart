@@ -5,6 +5,7 @@
   import type { Item } from '../lib/api/types/Item'
   import type { ShoppingList } from '../lib/api/types/ShoppingList'
   import Icon from '../lib/components/Icon.svelte'
+  import PictureSheet from '../lib/components/PictureSheet.svelte'
   import { draggable, dropList } from '../lib/dnd.svelte'
   import { router } from '../lib/router.svelte'
   import { shopping } from '../lib/shopping.svelte'
@@ -29,6 +30,11 @@
   let menuOpen = $state(false)
   let staplesList = $state<ShoppingList | null>(null)
   let staplesOpen = $state(false)
+
+  let shown = $state<Item | null>(null)
+  let pictureOpen = $state(false)
+  const showPicture = (item: Item) => ((shown = item), (pictureOpen = true))
+  const shownLook = $derived(shown ? shopping.look(shown) : null)
 
   const edit = (item: Item, focus?: 'amount') => ((editing = item), (editFocus = focus), (editOpen = true))
   const menu = (l: ShoppingList) => ((menuList = l), (menuOpen = true))
@@ -113,7 +119,7 @@
       </h2>
       <div use:dropList={{ accepts: (it) => it.kind === 'list' && it.shopId === s.id, drop: (it, i) => moveList(it.id, i), keyMove: moveList }}>
         {#each shopping.listsOf(s.id) as l (l.id)}
-          <ListCard list={l} onedit={edit} onstaples={staples} onmenu={menu} />
+          <ListCard list={l} onedit={edit} onstaples={staples} onmenu={menu} onpicture={showPicture} />
         {/each}
       </div>
       <div class="shop-foot">
@@ -143,7 +149,7 @@
   {#if shared.length}
     <section class="shop-block">
       <h2>Shared with me</h2>
-      {#each shared as l (l.id)}<ListCard list={l} onedit={edit} onstaples={staples} onmenu={menu} />{/each}
+      {#each shared as l (l.id)}<ListCard list={l} onedit={edit} onstaples={staples} onmenu={menu} onpicture={showPicture} />{/each}
     </section>
   {/if}
 
@@ -153,6 +159,12 @@
   </form>
 
   <ItemSheet item={editing} bind:open={editOpen} focus={editFocus} />
+  <PictureSheet
+    bind:open={pictureOpen}
+    image={shownLook?.image ?? null}
+    title={shown?.name ?? ''}
+    note={shownLook?.from === 'preferred' ? `Any brand will do; usually ${shownLook.brand?.replace(/^usually /, '')}.` : shownLook?.brand}
+  />
 {/if}
 
 {#if menuList}<ListMenu bind:open={menuOpen} list={menuList} />{/if}

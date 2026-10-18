@@ -134,6 +134,22 @@ pub async fn require_staple(
     Ok(shop_id)
 }
 
+/// A live product of the user's own; returns its catalogue item.
+pub async fn require_product(
+    conn: &mut SqliteConnection,
+    user: &AuthUser,
+    product_id: &str,
+) -> ApiResult<String> {
+    sqlx::query_scalar(
+        "SELECT catalog_item_id FROM products WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+    )
+    .bind(product_id)
+    .bind(user.id())
+    .fetch_optional(&mut *conn)
+    .await?
+    .ok_or(AppError::NotFound)
+}
+
 /// A live entry of the user's own catalogue.
 pub async fn require_catalog_item(
     conn: &mut SqliteConnection,
@@ -148,4 +164,43 @@ pub async fn require_catalog_item(
     .fetch_optional(&mut *conn)
     .await?;
     ok.map(|_| ()).ok_or(AppError::NotFound)
+}
+
+/// A picture the user may see: their own, or one shown by an item on a list they can see
+/// (its pinned product's, its catalogue item's, or one of that item's products'), so
+/// people on a shared list see the pictures of what's on it (D-21).
+pub async fn require_image(
+    conn: &mut SqliteConnection,
+    user: &AuthUser,
+    image_id: &str,
+) -> ApiResult<()> {
+    let ok: Option<i64> = sqlx::query_scalar(&format!(
+        "SELECT 1 FROM images img WHERE img.id = ?2 AND (img.owner_id = ?1 OR EXISTS (
+             SELECT 1 FROM items i JOIN lists l ON l.id = i.list_id
+             WHERE {VISIBLE_LISTS} AND i.deleted_at IS NULL AND (
+                 i.product_id IN (SELECT id FROM products WHERE image_id = img.id)
+                 OR i.catalog_item_id IN (SELECT id FROM catalog_items WHERE image_id = img.id)
+                 OR i.catalog_item_id IN (SELECT catalog_item_id FROM products
+                                          WHERE image_id = img.id AND deleted_at IS NULL))))"
+    ))
+    .bind(user.id())
+    .bind(image_id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    ok.map(|_| ()).ok_or(AppError::NotFound)
+}
+
+/// A picture of the user's own, to attach to their products or catalogue items.
+pub async fn require_own_image(
+    conn: &mut SqliteConnection,
+    user: &AuthUser,
+    image_id: &str,
+) -> ApiResult<()> {
+    let ok: Option<i64> = sqlx::query_scalar("SELECT 1 FROM images WHERE id = ? AND owner_id = ?")
+        .bind(image_id)
+        .bind(user.id())
+        .fetch_optional(&mut *conn)
+        .await?;
+    ok.map(|_| ())
+        .ok_or_else(|| crate::error::bad("no such picture"))
 }

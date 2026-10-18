@@ -44,6 +44,11 @@ curl -H "Authorization: Bearer sc_…" http://cart.local:3100/api/v1/summary
 | `POST /items/{id}/move` | Reorder an item: `{"after": "<item id>"}` or `{"before": …}` (neither = the end); also `category_id` and `list_id` to move it to another category or list |
 | `POST /items/move` | `{"ids": [...], "list_id": "…"}`: move several items to another list |
 | `POST /categories/{id}/move`, `/lists/{id}/move`, `/shops/{id}/move`, `/staples/{id}/move` | Reorder: `{"after": …}` or `{"before": …}` |
+| `GET/POST /catalog/{id}/products`, `PATCH/DELETE /products/{id}` | Brands/products of a catalogue item. Items and staples take a `product_id` |
+| `PUT /catalog/{id}/preferred` | `{"product_id": "…", "shop_id": "…"}` (no `shop_id`: everywhere; `null` product: no preference) |
+| `POST /images` · `GET /images/{id}[?size=large]` | Upload a picture (JPEG/PNG/WebP as the body, up to `MAX_UPLOAD_MB`); it's resized and re-encoded |
+| `GET /lookup?q=` · `GET /lookup/barcode/{code}` | Search Open Food Facts by name or barcode (503 when switched off or unreachable) |
+| `GET /lookup/picture/{code}` · `POST /lookup/{code}/import` | A result's picture (via your server); use a result as a product or picture |
 
 Adding milk to your supermarket's default list from a script:
 
@@ -58,9 +63,6 @@ curl -X POST -H "Authorization: Bearer sc_…" -H "Content-Type: application/jso
 |---|---|
 | `GET /sync?since=<rev>` | Everything you can see (`since=0`) or changed since `rev`, including deletions |
 | `GET /events` | Server-sent events with live changes |
-| `GET/POST/PATCH/DELETE /catalog/{id}/products`, `/products/{id}` | Brands/products of a catalogue item; `PUT /catalog/{id}/preferred` |
-| `POST /images` · `GET /images/{id}` | Upload a picture (resized on the server) and fetch it |
-| `GET /lookup?q=` · `GET /lookup/barcode/{code}` | Search Open Food Facts for products and pictures |
 | `GET/POST/DELETE /lists/{id}/shares` | Sharing |
 | `GET /summary` | Open items per list, for Streamline and dashboards |
 | `/wishlists`, `/wish-items`, `/claims`, `/persons` | Wishlists and gifts |

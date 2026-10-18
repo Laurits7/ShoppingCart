@@ -19,12 +19,13 @@ export const onUnauthorized = (l: Listener) => {
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response
+  const raw = body instanceof Blob
   try {
     res = await fetch(`/api/v1${path}`, {
       method,
       credentials: 'same-origin',
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers: body === undefined ? undefined : { 'Content-Type': raw ? body.type || 'application/octet-stream' : 'application/json' },
+      body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
     })
   } catch {
     throw new ApiError(0, 'Could not reach the server')
@@ -48,7 +49,10 @@ export const api = {
   get: <T>(p: string) => request<T>('GET', p),
   post: <T>(p: string, b?: unknown) => request<T>('POST', p, b ?? {}),
   patch: <T>(p: string, b: unknown) => request<T>('PATCH', p, b),
+  put: <T>(p: string, b: unknown) => request<T>('PUT', p, b),
   del: <T = void>(p: string) => request<T>('DELETE', p),
+  /** Send a file (a picture) as the raw request body. */
+  upload: <T>(p: string, file: Blob) => request<T>('POST', p, file),
 }
 
 /** A readable message for any error thrown by `api`. */

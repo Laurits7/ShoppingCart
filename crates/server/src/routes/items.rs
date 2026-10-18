@@ -41,6 +41,7 @@ const ITEM_COLS: &[&str] = &[
     "list_id",
     "category_id",
     "catalog_item_id",
+    "product_id",
     "name",
     "amount",
     "unit",
@@ -356,6 +357,9 @@ pub struct NewItem {
     pub category_name: Option<String>,
     /// Reference in another system (e.g. a Mealie item id).
     pub external_ref: Option<String>,
+    /// Pin it to one of your products ("milk by Alma"). With only this, the item is named
+    /// after the product's catalogue item.
+    pub product_id: Option<String>,
 }
 
 /// The item added, or the open item the amount was added to.
@@ -374,9 +378,34 @@ fn source_for(user: &AuthUser) -> &'static str {
     }
 }
 
+/// The user's product whose name ("Alma Piim 2.5%", or just "Piim 2.5%") is exactly `text`,
+/// with its catalogue item's name.
+async fn exact_product(
+    conn: &mut SqliteConnection,
+    user_id: &str,
+    text: &str,
+) -> sqlx::Result<Option<(String, String)>> {
+    let want = normalize_name(text);
+    let all: Vec<(String, String, String, String)> = sqlx::query_as(
+        "SELECT p.id, p.brand, p.name, c.name FROM products p JOIN catalog_items c ON c.id = p.catalog_item_id
+         WHERE p.user_id = ? AND p.deleted_at IS NULL AND c.deleted_at IS NULL ORDER BY p.position, p.id",
+    )
+    .bind(user_id)
+    .fetch_all(conn)
+    .await?;
+    Ok(all.into_iter().find_map(|(id, brand, pname, cname)| {
+        let full = normalize_name(&format!("{brand} {pname}"));
+        (full == want || (!pname.trim().is_empty() && normalize_name(&pname) == want))
+            .then_some((id, cname))
+    }))
+}
+
+type StapleRow = (String, f64, Option<String>, Option<String>, Option<String>);
+
 #[derive(sqlx::FromRow)]
 struct OpenItem {
     id: String,
+    product_id: Option<String>,
     name: String,
     amount: f64,
     unit: Option<String>,
@@ -420,16 +449,50 @@ pub async fn add_item(
         });
     }
 
-    let parsed = match (&n.text, &n.name) {
-        (Some(t), _) => amount::parse(t),
-        (None, Some(nm)) => amount::Parsed {
+    // The product: the one asked for, or for imports one whose name matches exactly
+    // (SPEC §6.4b: imports stay generic otherwise).
+    let product: Option<(String, String)> = match &n.product_id {
+        Some(p) => Some(
+            sqlx::query_as(
+                "SELECT p.id, c.name FROM products p JOIN catalog_items c ON c.id = p.catalog_item_id
+                 WHERE p.id = ? AND p.user_id = ? AND p.deleted_at IS NULL",
+            )
+            .bind(p)
+            .bind(user_id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .ok_or_else(|| bad("no such product"))?,
+        ),
+        None => None,
+    };
+    let parsed = match (&n.text, &n.name, &product) {
+        (Some(t), _, _) => amount::parse(t),
+        (None, Some(nm), _) => amount::Parsed {
             name: nm.clone(),
             amount: None,
             unit: None,
         },
-        (None, None) => return Err(bad("give a name or a text")),
+        (None, None, Some((_, cname))) => amount::Parsed {
+            name: cname.clone(),
+            amount: None,
+            unit: None,
+        },
+        (None, None, None) => return Err(bad("give a name or a text")),
     };
-    let iname = name("name", &parsed.name, MAX_NAME_CHARS)?;
+    let product = match product {
+        Some(p) => Some(p),
+        None if matches!(source, "api" | "mealie") => {
+            exact_product(conn, user_id, &parsed.name).await?
+        }
+        None => None,
+    };
+    // An exact product match is named after its catalogue item ("Alma Piim" → "Milk").
+    let parsed_name = match (&product, &n.product_id) {
+        (Some((_, cname)), None) => cname.clone(),
+        _ => parsed.name.clone(),
+    };
+    let product_id = product.map(|(p, _)| p);
+    let iname = name("name", &parsed_name, MAX_NAME_CHARS)?;
     let normalized = normalize_name(&iname);
     let given_unit = match (&n.unit, n.amount) {
         (Some(u), _) => amount::check_unit(u).map_err(bad)?,
@@ -472,7 +535,7 @@ pub async fn add_item(
 
     // Duplicate guard: the same name open on the list gets the amount added.
     let open: Vec<OpenItem> = sqlx::query_as(
-        "SELECT id, name, amount, unit, category_id FROM items
+        "SELECT id, product_id, name, amount, unit, category_id FROM items
          WHERE list_id = ? AND deleted_at IS NULL AND checked_at IS NULL ORDER BY position, id",
     )
     .bind(list_id)
@@ -481,13 +544,15 @@ pub async fn add_item(
     let ts = now();
     for OpenItem {
         id: oid,
+        product_id: oproduct,
         name: oname,
         amount: oamount,
         unit: ounit,
         category_id: ocat,
     } in open
     {
-        if normalize_name(&oname) != normalized {
+        // The same thing of another brand is a row of its own.
+        if normalize_name(&oname) != normalized || oproduct != product_id {
             continue;
         }
         let Some(total) = amount::combine(oamount, ounit.as_deref(), amt, unit.as_deref()) else {
@@ -549,14 +614,15 @@ pub async fn add_item(
     let position = next_position(conn, "items", "list_id", list_id).await?;
     let rev = next_rev(conn).await?;
     sqlx::query(
-        "INSERT INTO items (id, list_id, category_id, catalog_item_id, name, amount, unit, step, note,
+        "INSERT INTO items (id, list_id, category_id, catalog_item_id, product_id, name, amount, unit, step, note,
                             position, added_by, source, external_ref, created_at, updated_at, rev)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     )
     .bind(&id)
     .bind(list_id)
     .bind(category.map(|(c, _)| c))
     .bind(&catalog_id)
+    .bind(&product_id)
     .bind(&iname)
     .bind(amt)
     .bind(&unit)
@@ -647,6 +713,10 @@ pub struct PatchItem {
     category_id: Option<Option<String>>,
     /// `true` puts it in the cart, `false` takes it out.
     checked: Option<bool>,
+    /// One of your products, or null for any brand.
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
+    product_id: Option<Option<String>>,
 }
 
 #[utoipa::path(patch, path = "/items/{id}", tag = "shopping", summary = "Edit or tick an item", params(("id" = String, Path, description = "ULID")), request_body = PatchItem, responses((status = 200, body = Item), (status = 400, body = crate::error::Problem), (status = 403, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
@@ -737,6 +807,16 @@ pub async fn patch_item(
         if let Some(cid) = catalog_id {
             catalog::learn_category(&mut tx, user.id(), &cid, cat_name.as_deref()).await?;
         }
+    }
+    if let Some(pid) = p.product_id {
+        if let Some(pid) = &pid {
+            visibility::require_product(&mut tx, &user, pid).await?;
+        }
+        sqlx::query("UPDATE items SET product_id = ? WHERE id = ?")
+            .bind(pid)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await?;
     }
     if let Some(checked) = p.checked {
         sqlx::query(
@@ -941,17 +1021,19 @@ pub async fn add_staples(
         if shop != list_shop {
             return Err(bad("that staple belongs to another shop"));
         }
-        let (sname, samount, sunit, scat): (String, f64, Option<String>, Option<String>) =
-            sqlx::query_as("SELECT name, amount, unit, category_name FROM staples WHERE id = ?")
-                .bind(&s.staple_id)
-                .fetch_one(&mut *tx)
-                .await?;
+        let (sname, samount, sunit, scat, sproduct): StapleRow = sqlx::query_as(
+            "SELECT name, amount, unit, category_name, product_id FROM staples WHERE id = ?",
+        )
+        .bind(&s.staple_id)
+        .fetch_one(&mut *tx)
+        .await?;
         let n = NewItem {
             id: s.id,
             name: Some(sname),
             amount: Some(samount),
             unit: Some(sunit.unwrap_or_default()),
             category_name: scat,
+            product_id: sproduct,
             ..Default::default()
         };
         out.push(add_item(&mut tx, user.id(), &list_id, n, "staple").await?);

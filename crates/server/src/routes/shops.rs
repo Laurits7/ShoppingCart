@@ -16,7 +16,9 @@ use crate::{
     auth::AuthUser,
     db::{next_position, next_rev},
     error::{ApiResult, AppError, bad, insert_err},
-    models::{CatalogItem, Category, Item, Shop, ShoppingList, Staple},
+    models::{
+        CatalogItem, Category, Image, Item, Product, ProductPreference, Shop, ShoppingList, Staple,
+    },
     positions::{Place, Scope},
     util::{double_option, id_or_new, name, now},
     visibility::{self, Need, ROLE, VISIBLE_LISTS},
@@ -207,9 +209,13 @@ pub struct ShoppingData {
     pub items: Vec<Item>,
     pub staples: Vec<Staple>,
     pub catalog: Vec<CatalogItem>,
+    pub products: Vec<Product>,
+    pub preferences: Vec<ProductPreference>,
+    /// Your pictures in use (for their credits).
+    pub images: Vec<Image>,
 }
 
-#[utoipa::path(get, path = "/shopping", tag = "shopping", summary = "Everything on your Shopping tab: shops, lists, categories, items, staples and your catalogue", responses((status = 200, body = ShoppingData), (status = 401, body = crate::error::Problem)))]
+#[utoipa::path(get, path = "/shopping", tag = "shopping", summary = "Everything on your Shopping tab: shops, lists, categories, items, staples, your catalogue and products", responses((status = 200, body = ShoppingData), (status = 401, body = crate::error::Problem)))]
 pub async fn shopping(
     State(state): State<AppState>,
     user: AuthUser,
@@ -222,7 +228,20 @@ pub async fn shopping(
     let items = items::visible_items(&mut conn, uid, None).await?;
     let staples = staples::user_staples(&mut conn, uid, None).await?;
     let catalog = catalog::all(&mut conn, uid).await?;
+    let products = super::products::user_products(&mut conn, uid, None).await?;
+    let preferences = super::products::user_preferences(&mut conn, uid, None).await?;
+    let images = sqlx::query_as(
+        "SELECT id, width, height, source, source_ref, created_at FROM images WHERE owner_id = ?1
+           AND (id IN (SELECT image_id FROM products WHERE user_id = ?1 AND deleted_at IS NULL)
+                OR id IN (SELECT image_id FROM catalog_items WHERE user_id = ?1 AND deleted_at IS NULL))",
+    )
+    .bind(uid)
+    .fetch_all(&mut *conn)
+    .await?;
     Ok(Json(ShoppingData {
+        images,
+        products,
+        preferences,
         shops,
         lists,
         categories,

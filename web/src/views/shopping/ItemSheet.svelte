@@ -5,6 +5,7 @@
   import { shopping } from '../../lib/shopping.svelte'
   import { toast } from '../../lib/toast.svelte'
   import MoveSheet from './MoveSheet.svelte'
+  import ProductSheet from './ProductSheet.svelte'
 
   let { item, open = $bindable(false), focus }: { item: Item | null; open: boolean; focus?: 'amount' } = $props()
 
@@ -60,11 +61,13 @@
       return
     }
     const cat = shopping.categories.find((c) => c.id === item!.category_id)?.name ?? null
-    shopping.createStaple(shopId, { name: item.name, amount: item.amount, unit: item.unit, category_name: cat })
+    shopping.createStaple(shopId, { name: item.name, amount: item.amount, unit: item.unit, category_name: cat, product_id: item.product_id })
     toast(`${item.name} is now a staple of ${shopping.shop(shopId)?.name ?? 'this shop'}`)
   }
 
   let moveOpen = $state(false)
+  let brandOpen = $state(false)
+  const entry = $derived(item ? shopping.entryOf(item) : undefined)
   const otherLists = $derived(shopping.lists.some((l) => l.id !== item?.list_id && !l.archived_at && l.role !== 'viewer'))
 
   function remove() {
@@ -91,6 +94,7 @@
       <label class="field wide"><span>Note</span><textarea bind:value={note} maxlength="1000"></textarea></label>
       <div class="actions wide">
         <button class="btn primary" type="submit">Save</button>
+        {#if entry}<button class="btn" type="button" onclick={() => ((open = false), (brandOpen = true))}>Brand…</button>{/if}
         <button class="btn" type="button" onclick={makeStaple}>Make staple</button>
         {#if otherLists}<button class="btn" type="button" onclick={() => ((open = false), (moveOpen = true))}>Move to…</button>{/if}
         <span class="spacer"></span>
@@ -102,3 +106,4 @@
 </Sheet>
 
 {#if item}<MoveSheet bind:open={moveOpen} items={[item]} />{/if}
+{#if item && entry}<ProductSheet bind:open={brandOpen} catalogId={entry.id} {item} shopId={shopping.list(item.list_id)?.shop_id ?? null} />{/if}

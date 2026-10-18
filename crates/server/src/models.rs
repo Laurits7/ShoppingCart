@@ -174,6 +174,8 @@ pub struct Item {
     pub list_id: String,
     pub category_id: Option<String>,
     pub catalog_item_id: Option<String>,
+    /// The brand/product it must be ("milk by Alma"); none means any.
+    pub product_id: Option<String>,
     pub name: String,
     pub amount: f64,
     /// "kg", "g", "l", "pack"…; none means pieces.
@@ -202,6 +204,7 @@ pub struct Staple {
     pub id: String,
     pub shop_id: String,
     pub catalog_item_id: Option<String>,
+    pub product_id: Option<String>,
     pub name: String,
     pub amount: f64,
     pub unit: Option<String>,
@@ -243,10 +246,59 @@ pub struct CatalogItem {
     pub shop_id: Option<String>,
     /// Hidden entries are never suggested.
     pub hidden: bool,
+    /// A picture of the thing itself (no brand).
+    pub image_id: Option<String>,
     #[sqlx(skip)]
     pub shops: Vec<CatalogShopUse>,
     pub created_at: String,
     pub updated_at: String,
     #[ts(type = "number")]
     pub rev: i64,
+}
+
+// ---- products and pictures (SPEC §6.4b) --------------------------------------------------
+
+/// A stored picture: fetch it from `/images/{id}` (thumbnail) or `/images/{id}?size=large`.
+#[derive(Debug, Clone, Serialize, FromRow, TS, utoipa::ToSchema)]
+#[ts(export)]
+pub struct Image {
+    pub id: String,
+    /// Size of the large version.
+    pub width: i64,
+    pub height: i64,
+    #[ts(type = "'upload' | 'openfoodfacts'")]
+    pub source: String,
+    /// For Open Food Facts pictures: the product page to credit (CC BY-SA).
+    pub source_ref: Option<String>,
+    pub created_at: String,
+}
+
+/// A branded version of a catalogue item ("Alma · Piim 2.5% 1 l").
+#[derive(Debug, Clone, Serialize, FromRow, TS, utoipa::ToSchema)]
+#[ts(export)]
+pub struct Product {
+    pub id: String,
+    pub catalog_item_id: String,
+    pub brand: String,
+    pub name: String,
+    pub barcode: Option<String>,
+    pub image_id: Option<String>,
+    #[ts(type = "'manual' | 'openfoodfacts'")]
+    pub source: String,
+    /// Open Food Facts product code, when it came from there.
+    pub source_ref: Option<String>,
+    pub position: String,
+    pub created_at: String,
+    pub updated_at: String,
+    #[ts(type = "number")]
+    pub rev: i64,
+}
+
+/// The preferred product of a catalogue item, everywhere (`shop_id` null) or at one shop.
+#[derive(Debug, Clone, Serialize, FromRow, TS, utoipa::ToSchema)]
+#[ts(export)]
+pub struct ProductPreference {
+    pub catalog_item_id: String,
+    pub shop_id: Option<String>,
+    pub product_id: String,
 }

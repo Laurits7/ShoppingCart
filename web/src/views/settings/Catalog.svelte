@@ -5,6 +5,8 @@
   import { normalizeName } from '../../lib/catalog'
   import Icon from '../../lib/components/Icon.svelte'
   import Sheet from '../../lib/components/Sheet.svelte'
+  import Thumb from '../../lib/components/Thumb.svelte'
+  import ProductSheet from '../shopping/ProductSheet.svelte'
   import { shopping } from '../../lib/shopping.svelte'
   import { toast } from '../../lib/toast.svelte'
 
@@ -16,6 +18,7 @@
   let mergeInto = $state('')
   let editing = $state<CatalogItem | null>(null)
   let editOpen = $state(false)
+  let brandsOpen = $state(false)
   let form = $state({ name: '', category: '', amount: '', unit: '', step: '', hidden: false })
 
   // Always start from the server's copy: suggestions while shopping may have added
@@ -117,7 +120,9 @@
             </label>
           {:else}
             <button class="entry" onclick={() => edit(c)}>
+              {#if c.image_id}<Thumb id={c.image_id} size={32} />{/if}
               <span class="name">{c.name}{#if c.hidden}<span class="muted small"> · hidden</span>{/if}</span>
+              {#if shopping.productsOf(c.id).length}<span class="badge">{shopping.productsOf(c.id).length} brand{shopping.productsOf(c.id).length === 1 ? '' : 's'}</span>{/if}
               <span class="muted small">{c.category_name ?? 'Other'} · {formatAmount(c.amount, c.unit)} · {c.use_count}×</span>
             </button>
           {/if}
@@ -138,6 +143,7 @@
       <label class="check"><input type="checkbox" bind:checked={form.hidden} /> Hide from suggestions</label>
       <div class="actions wide">
         <button class="btn primary" type="submit">Save</button>
+        <button class="btn" type="button" onclick={() => ((editOpen = false), (brandsOpen = true))}>Brands and picture…</button>
         <span class="spacer"></span>
         <button class="btn danger" type="button" onclick={() => editing && del(editing)}><Icon name="trash" size={16} /> Forget</button>
       </div>
@@ -146,6 +152,8 @@
     <datalist id="catalog-units">{#each COMMON_UNITS.filter(Boolean) as u (u)}<option value={u}></option>{/each}</datalist>
   {/if}
 </Sheet>
+
+{#if editing}<ProductSheet bind:open={brandsOpen} catalogId={editing.id} />{/if}
 
 <Sheet bind:open={mergeOpen} title="Merge {picked.length} entries">
   <p class="muted small">Their use counts add up and items on your lists point to the one you keep. Keep:</p>

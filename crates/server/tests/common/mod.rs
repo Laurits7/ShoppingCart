@@ -20,8 +20,15 @@ pub struct T {
 }
 
 pub async fn setup() -> T {
+    setup_with(|_| {}).await
+}
+
+/// A server whose test config is adjusted first (e.g. to point lookups at a fake provider).
+pub async fn setup_with(f: impl FnOnce(&mut Config)) -> T {
     let dir = std::env::temp_dir().join(format!("shoppingcart-test-{}", ulid::Ulid::new()));
-    let (app, _state) = shoppingcart::build(Config::for_tests(dir)).await.unwrap();
+    let mut config = Config::for_tests(dir);
+    f(&mut config);
+    let (app, _state) = shoppingcart::build(config).await.unwrap();
     T { app }
 }
 
@@ -30,6 +37,7 @@ pub struct Res {
     pub json: Value,
     pub headers: HeaderMap,
     pub cookie: Option<String>,
+    pub body: Vec<u8>,
 }
 
 impl T {
@@ -52,6 +60,7 @@ impl T {
             json,
             headers,
             cookie,
+            body: bytes.to_vec(),
         }
     }
 
@@ -82,6 +91,28 @@ impl T {
             None => Body::empty(),
         };
         self.send(b.body(body).unwrap()).await
+    }
+
+    /// A request with a raw body (e.g. a picture upload).
+    pub async fn raw(
+        &self,
+        method: &str,
+        path: &str,
+        auth: &str,
+        content_type: &str,
+        body: Vec<u8>,
+    ) -> Res {
+        let mut b = Request::builder()
+            .method(method)
+            .uri(path)
+            .header(header::HOST, "localhost:3100")
+            .header(header::CONTENT_TYPE, content_type);
+        b = if auth.starts_with("sc_") {
+            b.header(header::AUTHORIZATION, format!("Bearer {auth}"))
+        } else {
+            b.header(header::COOKIE, format!("sc_session={auth}"))
+        };
+        self.send(b.body(Body::from(body)).unwrap()).await
     }
 
     /// First-run setup; returns the admin's session token.
