@@ -17,6 +17,7 @@ use crate::{
     db::{next_position, next_rev},
     error::{ApiResult, AppError, bad, insert_err},
     models::{CatalogItem, Category, Item, Shop, ShoppingList, Staple},
+    positions::{Place, Scope},
     util::{double_option, id_or_new, name, now},
     visibility::{self, Need, ROLE, VISIBLE_LISTS},
 };
@@ -603,4 +604,66 @@ pub async fn delete_list(
     tombstone_lists(&mut tx, "id = ?3", &id).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(post, path = "/shops/{id}/move", tag = "shopping", summary = "Reorder a shop (after or before another of your shops; neither = last)", params(("id" = String, Path, description = "ULID")), request_body = Place, responses((status = 200, body = Shop), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
+pub async fn move_shop(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(place): Json<Place>,
+) -> ApiResult<Json<Shop>> {
+    let mut tx = state.db.write.begin().await?;
+    visibility::require_shop(&mut tx, &user, &id).await?;
+    let scope = Scope {
+        table: "shops",
+        column: "owner_id",
+        id: user.id(),
+    };
+    let key = scope.key_for(&mut tx, &id, &place).await?;
+    let rev = next_rev(&mut tx).await?;
+    sqlx::query("UPDATE shops SET position = ?, updated_at = ?, rev = ? WHERE id = ?")
+        .bind(key)
+        .bind(now())
+        .bind(rev)
+        .bind(&id)
+        .execute(&mut *tx)
+        .await?;
+    let shop = load_shop(&mut tx, &id).await?.ok_or(AppError::NotFound)?;
+    tx.commit().await?;
+    Ok(Json(shop))
+}
+
+#[utoipa::path(post, path = "/lists/{id}/move", tag = "shopping", summary = "Reorder a list within its shop (owner)", params(("id" = String, Path, description = "ULID")), request_body = Place, responses((status = 200, body = ShoppingList), (status = 400, body = crate::error::Problem), (status = 403, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
+pub async fn move_list(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(place): Json<Place>,
+) -> ApiResult<Json<ShoppingList>> {
+    let mut tx = state.db.write.begin().await?;
+    visibility::require_list(&mut tx, &user, &id, Need::Manage).await?;
+    let shop_id: String = sqlx::query_scalar("SELECT shop_id FROM lists WHERE id = ?")
+        .bind(&id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let scope = Scope {
+        table: "lists",
+        column: "shop_id",
+        id: &shop_id,
+    };
+    let key = scope.key_for(&mut tx, &id, &place).await?;
+    let rev = next_rev(&mut tx).await?;
+    sqlx::query("UPDATE lists SET position = ?, updated_at = ?, rev = ? WHERE id = ?")
+        .bind(key)
+        .bind(now())
+        .bind(rev)
+        .bind(&id)
+        .execute(&mut *tx)
+        .await?;
+    let list = load_list(&mut tx, user.id(), &id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    tx.commit().await?;
+    Ok(Json(list))
 }

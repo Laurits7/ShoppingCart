@@ -1045,3 +1045,216 @@ async fn read_tokens_only_read() {
         .await;
     assert_eq!(r.status, StatusCode::FORBIDDEN);
 }
+
+/// Ids of a list's open items in display order.
+async fn order(t: &T, s: &str, list: &str) -> Vec<String> {
+    let mut all = items(t, s, list).await;
+    all.sort_by(|a, b| {
+        (a["position"].as_str(), a["id"].as_str()).cmp(&(b["position"].as_str(), b["id"].as_str()))
+    });
+    all.iter()
+        .map(|i| i["name"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn moving_things() {
+    let t = setup().await;
+    let (s, shop, list) = with_shop(&t).await;
+    let mut ids = std::collections::HashMap::new();
+    for n in ["a", "b", "c", "d"] {
+        let r = add(&t, &s, &list, json!({"name": n, "category_id": null})).await;
+        ids.insert(n, r["item"]["id"].as_str().unwrap().to_string());
+    }
+    let mv = |id: &str, body: Value| {
+        let (t, s, id) = (&t, s.clone(), id.to_string());
+        async move {
+            t.req(
+                "POST",
+                &format!("/api/v1/items/{id}/move"),
+                Some(&s),
+                Some(body),
+            )
+            .await
+        }
+    };
+    let r = mv(&ids["d"], json!({"after": ids["a"]})).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    assert_eq!(order(&t, &s, &list).await, ["a", "d", "b", "c"]);
+    mv(&ids["c"], json!({"before": ids["a"]})).await;
+    assert_eq!(order(&t, &s, &list).await, ["c", "a", "d", "b"]);
+    mv(&ids["c"], json!({})).await;
+    assert_eq!(order(&t, &s, &list).await, ["a", "d", "b", "c"]);
+    // Moving next to itself changes nothing.
+    mv(&ids["d"], json!({"after": ids["d"]})).await;
+    assert_eq!(order(&t, &s, &list).await, ["a", "d", "b", "c"]);
+
+    // Squeezing in at the same spot again and again rebalances instead of growing keys.
+    for i in 0..120 {
+        let who = if i % 2 == 0 { "b" } else { "c" };
+        let r = mv(&ids[who], json!({"after": ids["a"]})).await;
+        assert!(r.json["position"].as_str().unwrap().len() <= 24);
+    }
+    assert_eq!(order(&t, &s, &list).await, ["a", "c", "b", "d"]);
+
+    // Into a category: remembered for next time.
+    let cats = t
+        .req(
+            "GET",
+            &format!("/api/v1/lists/{list}/categories"),
+            Some(&s),
+            None,
+        )
+        .await
+        .json;
+    let dairy = category_id(&cats, "Dairy and eggs");
+    let r = mv(&ids["a"], json!({"category_id": dairy})).await;
+    assert_eq!(r.json["category_id"], dairy.as_str());
+    let other = t
+        .req(
+            "POST",
+            "/api/v1/lists",
+            Some(&s),
+            Some(json!({"shop_id": shop, "name": "Two"})),
+        )
+        .await
+        .json;
+    let other_list = other["list"]["id"].as_str().unwrap().to_string();
+    let r = add(&t, &s, &other_list, json!({"name": "a"})).await;
+    assert_eq!(
+        r["item"]["category_id"],
+        category_id(&other["categories"], "Dairy and eggs").as_str()
+    );
+
+    // To another list: a category of the same name is kept.
+    let r = mv(&ids["a"], json!({"list_id": other_list})).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    assert_eq!(r.json["list_id"], other_list.as_str());
+    assert_eq!(
+        r.json["category_id"],
+        category_id(&other["categories"], "Dairy and eggs").as_str()
+    );
+    // A sibling of the wrong list is refused.
+    let r = mv(&ids["b"], json!({"after": ids["a"]})).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+
+    // Several at once to a list in another shop.
+    let pharmacy = t
+        .req(
+            "POST",
+            "/api/v1/shops",
+            Some(&s),
+            Some(json!({"name": "Pharmacy"})),
+        )
+        .await
+        .json;
+    let p_list = pharmacy["shop"]["default_list_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = t
+        .req(
+            "POST",
+            "/api/v1/items/move",
+            Some(&s),
+            Some(json!({"ids": [ids["a"], ids["b"]], "list_id": p_list})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    assert!(
+        r.json
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["list_id"] == p_list.as_str())
+    );
+    // Pharmacy got the starter categories too, so Dairy is kept; b had none.
+    assert_eq!(
+        r.json[0]["category_id"],
+        category_id(&pharmacy["categories"], "Dairy and eggs").as_str()
+    );
+    assert!(r.json[1]["category_id"].is_null());
+    assert_eq!(order(&t, &s, &p_list).await, ["a", "b"]);
+    assert_eq!(order(&t, &s, &list).await, ["c", "d"]);
+
+    // Categories, lists, shops and staples reorder the same way.
+    let first = cats[0]["id"].as_str().unwrap();
+    let last = cats.as_array().unwrap().last().unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let r = t
+        .req(
+            "POST",
+            &format!("/api/v1/categories/{first}/move"),
+            Some(&s),
+            Some(json!({"after": last})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let cats2 = t
+        .req(
+            "GET",
+            &format!("/api/v1/lists/{list}/categories"),
+            Some(&s),
+            None,
+        )
+        .await
+        .json;
+    assert_eq!(cats2.as_array().unwrap().last().unwrap()["id"], first);
+
+    let r = t
+        .req(
+            "POST",
+            &format!("/api/v1/lists/{other_list}/move"),
+            Some(&s),
+            Some(json!({"before": list})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.json);
+    let lists = t.req("GET", "/api/v1/lists", Some(&s), None).await.json;
+    assert_eq!(lists[0]["id"], other_list.as_str());
+
+    let p_shop = pharmacy["shop"]["id"].as_str().unwrap();
+    t.req(
+        "POST",
+        &format!("/api/v1/shops/{p_shop}/move"),
+        Some(&s),
+        Some(json!({"before": shop})),
+    )
+    .await;
+    let shops = t.req("GET", "/api/v1/shops", Some(&s), None).await.json;
+    assert_eq!(shops[0]["id"], p_shop);
+
+    let mut staples = vec![];
+    for n in ["x", "y"] {
+        staples.push(
+            t.req(
+                "POST",
+                &format!("/api/v1/shops/{shop}/staples"),
+                Some(&s),
+                Some(json!({"name": n})),
+            )
+            .await
+            .json["id"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+        );
+    }
+    t.req(
+        "POST",
+        &format!("/api/v1/staples/{}/move", staples[1]),
+        Some(&s),
+        Some(json!({"before": staples[0]})),
+    )
+    .await;
+    let r = t
+        .req(
+            "GET",
+            &format!("/api/v1/shops/{shop}/staples"),
+            Some(&s),
+            None,
+        )
+        .await;
+    assert_eq!(r.json[0]["name"], "y");
+}

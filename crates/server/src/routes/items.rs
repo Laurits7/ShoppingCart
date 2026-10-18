@@ -22,6 +22,7 @@ use crate::{
     db::{next_position, next_rev},
     error::{ApiResult, AppError, bad, insert_err},
     models::{Category, Item},
+    positions::{Place, Scope},
     util::{double_option, id_or_new, name, now},
     visibility::{self, Need, VISIBLE_LISTS},
 };
@@ -954,6 +955,178 @@ pub async fn add_staples(
             ..Default::default()
         };
         out.push(add_item(&mut tx, user.id(), &list_id, n, "staple").await?);
+    }
+    tx.commit().await?;
+    Ok(Json(out))
+}
+
+// ---- moving --------------------------------------------------------------------------
+
+#[utoipa::path(post, path = "/categories/{id}/move", tag = "shopping", summary = "Reorder a category within its list", params(("id" = String, Path, description = "ULID")), request_body = Place, responses((status = 200, body = Category), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
+pub async fn move_category(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(place): Json<Place>,
+) -> ApiResult<Json<Category>> {
+    let mut tx = state.db.write.begin().await?;
+    let list_id = visibility::require_category(&mut tx, &user, &id, Need::EditItems).await?;
+    let scope = Scope {
+        table: "categories",
+        column: "list_id",
+        id: &list_id,
+    };
+    let key = scope.key_for(&mut tx, &id, &place).await?;
+    let rev = next_rev(&mut tx).await?;
+    sqlx::query("UPDATE categories SET position = ?, updated_at = ?, rev = ? WHERE id = ?")
+        .bind(key)
+        .bind(now())
+        .bind(rev)
+        .bind(&id)
+        .execute(&mut *tx)
+        .await?;
+    let cat = load_category(&mut tx, &id).await?;
+    tx.commit().await?;
+    Ok(Json(cat))
+}
+
+/// Move one item: to another place among the target list's items, another category, and
+/// maybe another list (where it keeps a category of the same name, if there is one).
+async fn move_one(
+    conn: &mut SqliteConnection,
+    user: &AuthUser,
+    id: &str,
+    target: Option<&str>,
+    category_id: Option<Option<String>>,
+    place: &Place,
+) -> ApiResult<Item> {
+    let from = visibility::require_item(conn, user, id, Need::EditItems, false).await?;
+    let target = target.unwrap_or(&from).to_string();
+    if target != from {
+        visibility::require_list(conn, user, &target, Need::EditItems).await?;
+    }
+    let item = load_item(conn, id).await?;
+    let category = match category_id {
+        Some(Some(c)) => {
+            let cname = category_on_list(conn, &target, &c).await?;
+            // Dropping it into a category is remembered, like choosing one in the editor.
+            if let Some(cid) = item
+                .catalog_item_id
+                .as_deref()
+                .filter(|_| item.category_id.as_deref() != Some(&c))
+            {
+                catalog::learn_category(conn, user.id(), cid, Some(&cname)).await?;
+            }
+            Some(c)
+        }
+        Some(None) => None,
+        None if target == from => item.category_id.clone(),
+        None => match &item.category_id {
+            Some(c) => match category_on_list(conn, &from, c).await.ok() {
+                Some(cname) => category_named(conn, &target, &cname)
+                    .await?
+                    .map(|(id, _)| id),
+                None => None,
+            },
+            None => None,
+        },
+    };
+    let scope = Scope {
+        table: "items",
+        column: "list_id",
+        id: &target,
+    };
+    let key = scope.key_for(conn, id, place).await?;
+    let rev = next_rev(conn).await?;
+    sqlx::query(
+        "UPDATE items SET list_id = ?, category_id = ?, position = ?, updated_at = ?, rev = ? WHERE id = ?",
+    )
+    .bind(&target)
+    .bind(&category)
+    .bind(key)
+    .bind(now())
+    .bind(rev)
+    .bind(id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(load_item(conn, id).await?)
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct MoveItem {
+    /// Put it right after this item (of the target list).
+    after: Option<String>,
+    /// Or right before this one. Neither: at the end.
+    before: Option<String>,
+    /// Move it to another list you can edit.
+    list_id: Option<String>,
+    /// A category of the target list, or null for *Other*. Absent: unchanged, or on another
+    /// list the category of the same name.
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
+    category_id: Option<Option<String>>,
+}
+
+#[utoipa::path(post, path = "/items/{id}/move", tag = "shopping", summary = "Reorder an item, move it to another category or another list", params(("id" = String, Path, description = "ULID")), request_body = MoveItem, responses((status = 200, body = Item), (status = 400, body = crate::error::Problem), (status = 403, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
+pub async fn move_item(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(m): Json<MoveItem>,
+) -> ApiResult<Json<Item>> {
+    let mut tx = state.db.write.begin().await?;
+    let place = Place {
+        after: m.after,
+        before: m.before,
+    };
+    let item = move_one(
+        &mut tx,
+        &user,
+        &id,
+        m.list_id.as_deref(),
+        m.category_id,
+        &place,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(item))
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct MoveItems {
+    ids: Vec<String>,
+    /// The list to move them to (the end of it, in the order given).
+    list_id: String,
+    /// A category of that list, or null for *Other*. Absent: each keeps a category of the
+    /// same name, if the list has one.
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
+    category_id: Option<Option<String>>,
+}
+
+#[utoipa::path(post, path = "/items/move", tag = "shopping", summary = "Move several items to another list", request_body = MoveItems, responses((status = 200, body = Vec<Item>), (status = 400, body = crate::error::Problem), (status = 403, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
+pub async fn move_items(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(m): Json<MoveItems>,
+) -> ApiResult<Json<Vec<Item>>> {
+    if m.ids.is_empty() || m.ids.len() > 500 {
+        return Err(bad("move 1 to 500 items at once"));
+    }
+    let mut tx = state.db.write.begin().await?;
+    let mut out = Vec::with_capacity(m.ids.len());
+    for id in &m.ids {
+        out.push(
+            move_one(
+                &mut tx,
+                &user,
+                id,
+                Some(&m.list_id),
+                m.category_id.clone(),
+                &Place::default(),
+            )
+            .await?,
+        );
     }
     tx.commit().await?;
     Ok(Json(out))

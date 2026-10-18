@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { live } from './lib/announce.svelte'
   import { api, ApiError, onUnauthorized } from './lib/api/client'
   import Icon, { type IconName } from './lib/components/Icon.svelte'
   import Toasts from './lib/components/Toasts.svelte'
@@ -89,6 +90,7 @@
   </div>
 {/if}
 <Toasts />
+<div class="sr-only" aria-live="assertive">{live.message}</div>
 
 <style>
   .center {

@@ -17,6 +17,7 @@ use crate::{
     db::{next_position, next_rev},
     error::{ApiResult, AppError, bad, insert_err},
     models::Staple,
+    positions::{Place, Scope},
     util::{double_option, id_or_new, name, now},
     visibility,
 };
@@ -217,4 +218,32 @@ pub async fn delete(
         .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(post, path = "/staples/{id}/move", tag = "shopping", summary = "Reorder a staple within its shop", params(("id" = String, Path, description = "ULID")), request_body = Place, responses((status = 200, body = Staple), (status = 400, body = crate::error::Problem), (status = 404, body = crate::error::Problem)))]
+pub async fn move_staple(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(place): Json<Place>,
+) -> ApiResult<Json<Staple>> {
+    let mut tx = state.db.write.begin().await?;
+    let shop_id = visibility::require_staple(&mut tx, &user, &id).await?;
+    let scope = Scope {
+        table: "staples",
+        column: "shop_id",
+        id: &shop_id,
+    };
+    let key = scope.key_for(&mut tx, &id, &place).await?;
+    let rev = next_rev(&mut tx).await?;
+    sqlx::query("UPDATE staples SET position = ?, updated_at = ?, rev = ? WHERE id = ?")
+        .bind(key)
+        .bind(now())
+        .bind(rev)
+        .bind(&id)
+        .execute(&mut *tx)
+        .await?;
+    let staple = load(&mut tx, &id).await?;
+    tx.commit().await?;
+    Ok(Json(staple))
 }

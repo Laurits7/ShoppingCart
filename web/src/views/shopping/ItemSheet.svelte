@@ -4,6 +4,7 @@
   import Sheet from '../../lib/components/Sheet.svelte'
   import { shopping } from '../../lib/shopping.svelte'
   import { toast } from '../../lib/toast.svelte'
+  import MoveSheet from './MoveSheet.svelte'
 
   let { item, open = $bindable(false), focus }: { item: Item | null; open: boolean; focus?: 'amount' } = $props()
 
@@ -63,6 +64,9 @@
     toast(`${item.name} is now a staple of ${shopping.shop(shopId)?.name ?? 'this shop'}`)
   }
 
+  let moveOpen = $state(false)
+  const otherLists = $derived(shopping.lists.some((l) => l.id !== item?.list_id && !l.archived_at && l.role !== 'viewer'))
+
   function remove() {
     if (!item) return
     shopping.remove(item)
@@ -88,6 +92,7 @@
       <div class="actions wide">
         <button class="btn primary" type="submit">Save</button>
         <button class="btn" type="button" onclick={makeStaple}>Make staple</button>
+        {#if otherLists}<button class="btn" type="button" onclick={() => ((open = false), (moveOpen = true))}>Move to…</button>{/if}
         <span class="spacer"></span>
         <button class="btn danger" type="button" onclick={remove}>Delete</button>
       </div>
@@ -95,3 +100,5 @@
     <datalist id="units">{#each COMMON_UNITS.filter(Boolean) as u (u)}<option value={u}></option>{/each}</datalist>
   {/if}
 </Sheet>
+
+{#if item}<MoveSheet bind:open={moveOpen} items={[item]} />{/if}

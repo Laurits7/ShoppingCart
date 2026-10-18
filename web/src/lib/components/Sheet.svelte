@@ -15,7 +15,7 @@
 
 <dialog bind:this={dlg} aria-label={title} onclose={() => (open = false)} onclick={(e) => e.target === dlg && dlg.close()}>
   {#if open}
-    <div class="sheet">
+    <div class="sheet" data-autoscroll>
       <header>
         <h2>{title}</h2>
         <button class="icon-btn" aria-label="Close" onclick={() => dlg.close()}><Icon name="x" /></button>

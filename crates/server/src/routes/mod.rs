@@ -46,6 +46,8 @@ use crate::AppState;
         items::get_items, items::create_item, items::create_shop_item, items::patch_item,
         items::step_item, items::delete_item, items::restore_items, items::finish, items::add_staples,
         staples::list, staples::create, staples::patch, staples::delete,
+        shops::move_shop, shops::move_list, items::move_category, items::move_item, items::move_items,
+        staples::move_staple,
         catalog::search, catalog::frequent, catalog::patch, catalog::delete, catalog::merge,
     ),
     tags(
@@ -180,6 +182,12 @@ pub fn router(state: AppState) -> Router {
             patch(shops::patch_shop).delete(shops::delete_shop),
         )
         .route("/shops/{id}/items", post(items::create_shop_item))
+        .route("/shops/{id}/move", post(shops::move_shop))
+        .route("/lists/{id}/move", post(shops::move_list))
+        .route("/categories/{id}/move", post(items::move_category))
+        .route("/staples/{id}/move", post(staples::move_staple))
+        .route("/items/move", post(items::move_items))
+        .route("/items/{id}/move", post(items::move_item))
         .route(
             "/shops/{id}/staples",
             get(staples::list).post(staples::create),

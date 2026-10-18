@@ -3,6 +3,7 @@
   import type { ShoppingList } from '../../lib/api/types/ShoppingList'
   import { normalizeName } from '../../lib/catalog'
   import Icon from '../../lib/components/Icon.svelte'
+  import { draggable, dropList } from '../../lib/dnd.svelte'
   import Sheet from '../../lib/components/Sheet.svelte'
   import { shopping } from '../../lib/shopping.svelte'
 
@@ -21,6 +22,11 @@
       picked = shopping.staplesOf(list.shop_id).filter((s) => !onList.has(normalizeName(s.name))).map((s) => s.id)
     }
   })
+
+  function moveStaple(id: string, index: number) {
+    const s = shopping.staples.find((x) => x.id === id)
+    if (s) shopping.moveStaple(s, index)
+  }
 
   function addPicked() {
     shopping.addStaples(list.id, staples.filter((s) => picked.includes(s.id)))
@@ -45,9 +51,12 @@
 <Sheet bind:open title="Staples of {shop?.name ?? 'this shop'}">
   {#if staples.length}
     <p class="muted small">What you usually buy here. Ticked ones are added to the list; those already on it start unticked.</p>
-    <ul>
+    <ul use:dropList={{ accepts: (it) => it.kind === 'staple' && it.shopId === list.shop_id, drop: (it, i) => moveStaple(it.id, i), keyMove: moveStaple }}>
       {#each staples as s (s.id)}
-        <li>
+        <li data-id={s.id} data-label={s.name} use:draggable={{ item: () => ({ kind: 'staple', id: s.id, shopId: s.shop_id }), disabled: list.role !== 'owner' }}>
+          {#if list.role === 'owner'}
+            <span class="grip" data-handle tabindex="0" role="button" aria-label="Move staple {s.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
+          {/if}
           <label>
             <input type="checkbox" value={s.id} bind:group={picked} />
             <span class="name">{s.name}</span>
@@ -88,7 +97,9 @@
   li {
     display: flex;
     align-items: center;
+    gap: 4px;
     border-top: 1px solid var(--border);
+    background: var(--surface);
   }
   label {
     flex: 1;

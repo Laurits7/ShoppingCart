@@ -105,3 +105,21 @@ All proposed defaults (Q-1 … Q-10) were accepted by the owner on 2026-10-18.
   quick add, and the cart folded into a line with *Finish shopping*. A list's title opens it full
   screen by category (`/list/{id}`). This replaces the drop-down shop switcher and "open the
   last-used list" (§6.1), and makes the separate quick-add in the switcher (§6.2) unnecessary.
+
+## Phase 3 (2026-10-18)
+
+- **D-35 · Moves name neighbours**: move endpoints take the sibling to go `after` or `before`
+  and the server computes the ordering key (the client also computes one for the instant
+  local update, which the answer replaces). Concurrent moves can't produce out-of-order keys
+  this way. A scope is rebalanced to short evenly spaced keys (`order::spread`) when a key
+  would pass 24 characters or two neighbours have equal keys.
+- **D-36 · Item positions are per list**: categories only group items, so one key orders an
+  item within its category. Moving to another list keeps a category of the same name, else
+  *Other*; dropping into a category is remembered in the catalogue like choosing it.
+- **D-37 · Grips**: lists, shops and categories drag by their grip only (so a press on a card
+  doesn't lift it); items and staples also by the row (mouse) or a long-press (touch).
+  Keyboard: Space picks up, arrows move (each step is applied at once), Space drops, Escape
+  puts it back.
+- **D-38 · Drag between lists on the summary page**: an item dropped on another list's card
+  moves there. Only an open list shows empty categories as drop targets while dragging (cards
+  would jump around otherwise).

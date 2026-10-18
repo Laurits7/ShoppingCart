@@ -5,6 +5,7 @@
   import type { Item } from '../lib/api/types/Item'
   import type { ShoppingList } from '../lib/api/types/ShoppingList'
   import Icon from '../lib/components/Icon.svelte'
+  import { draggable, dropList } from '../lib/dnd.svelte'
   import { router } from '../lib/router.svelte'
   import { shopping } from '../lib/shopping.svelte'
   import ItemSheet from './shopping/ItemSheet.svelte'
@@ -39,6 +40,15 @@
   const shop = $derived(current ? shopping.shop(current.shop_id) : undefined)
   // Lists shared with you sit under their owner's shop, which isn't one of yours (Phase 4).
   const shared = $derived(shopping.lists.filter((l) => !l.archived_at && !shopping.shop(l.shop_id)))
+
+  function moveList(id: string, index: number) {
+    const l = shopping.list(id)
+    if (l) shopping.moveList(l, index)
+  }
+  function moveShop(id: string, index: number) {
+    const s = shopping.shop(id)
+    if (s) shopping.moveShop(s, index)
+  }
 
   async function createShop(e: Event) {
     e.preventDefault()
@@ -93,13 +103,19 @@
     </div>
   {/if}
 
+  <div use:dropList={{ accepts: (it) => it.kind === 'shop', drop: (it, i) => moveShop(it.id, i), keyMove: moveShop }}>
   {#each shopping.sortedShops as s (s.id)}
     {@const archived = shopping.listsOf(s.id, true)}
-    <section class="shop-block">
-      <h2><span class="dot" style:background={s.color ?? undefined}></span>{s.name}</h2>
-      {#each shopping.listsOf(s.id) as l (l.id)}
-        <ListCard list={l} onedit={edit} onstaples={staples} onmenu={menu} />
-      {/each}
+    <section class="shop-block" data-id={s.id} data-label={s.name} use:draggable={{ item: () => ({ kind: 'shop', id: s.id }), handleOnly: true }}>
+      <h2>
+        <span class="grip" data-handle tabindex="0" role="button" aria-label="Move shop {s.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
+        <span class="dot" style:background={s.color ?? undefined}></span>{s.name}
+      </h2>
+      <div use:dropList={{ accepts: (it) => it.kind === 'list' && it.shopId === s.id, drop: (it, i) => moveList(it.id, i), keyMove: moveList }}>
+        {#each shopping.listsOf(s.id) as l (l.id)}
+          <ListCard list={l} onedit={edit} onstaples={staples} onmenu={menu} />
+        {/each}
+      </div>
       <div class="shop-foot">
         {#if addingListTo === s.id}
           <form class="row" onsubmit={(e) => createList(e, s.id)}>
@@ -122,6 +138,7 @@
       {/if}
     </section>
   {/each}
+  </div>
 
   {#if shared.length}
     <section class="shop-block">
@@ -164,7 +181,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 0 0 8px 4px;
+    margin: 0 0 4px;
   }
   .shop-foot {
     display: flex;

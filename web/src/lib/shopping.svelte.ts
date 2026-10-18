@@ -18,6 +18,7 @@ import type { Staple } from './api/types/Staple'
 import type { Stepped } from './api/types/Stepped'
 import { combine, formatAmount, step as stepAmount } from './amount'
 import { frequent as rankFrequent, normalizeName, rank, type Usage } from './catalog'
+import { neighbours } from './dndmath'
 import { keyBetween } from './order'
 import { session } from './session.svelte'
 import { toast } from './toast.svelte'
@@ -126,8 +127,9 @@ class ShoppingStore {
   openCount(listId: string) {
     return this.items.reduce((n, i) => n + (i.list_id === listId && !i.checked_at ? 1 : 0), 0)
   }
-  /** Open items grouped by category in the list's order, Other last, empty ones left out. */
-  sections(listId: string): Section[] {
+  /** Open items grouped by category in the list's order, Other last; empty ones only with
+   * `withEmpty` (as drop targets while dragging). */
+  sections(listId: string, withEmpty = false): Section[] {
     const open = this.itemsOf(listId)
       .filter((i) => !i.checked_at)
       .sort(byPosition)
@@ -135,7 +137,7 @@ class ShoppingStore {
     const known = new Set(cats.map((c) => c.id))
     const out: Section[] = cats.map((c) => ({ id: c.id, name: c.name, items: open.filter((i) => i.category_id === c.id) }))
     out.push({ id: 'other', name: 'Other', items: open.filter((i) => !i.category_id || !known.has(i.category_id)) })
-    return out.filter((s) => s.items.length)
+    return withEmpty ? out : out.filter((s) => s.items.length)
   }
   /** Items in the cart, most recently ticked first. */
   cartOf(listId: string): Item[] {
@@ -463,6 +465,85 @@ class ShoppingStore {
     for (const i of this.items) if (i.category_id === c.id) i.category_id = null
     removeWhere(this.categories, (x) => x.id === c.id)
     await this.#send(() => api.del(`/categories/${c.id}`))
+  }
+
+  // ---- moving (drag and drop) -----------------------------------------------------------------
+
+  /** Put `row` at `index` among `siblings` (in display order, without `row`) locally; returns
+   * the neighbours to name to the server. */
+  #slot(row: Positioned, siblings: Positioned[], index: number) {
+    const lo = siblings[index - 1]?.position ?? ''
+    const hi = siblings[index]?.position ?? null
+    row.position = hi !== null && lo >= hi ? keyBetween(lo, null) : keyBetween(lo, hi)
+    return neighbours(
+      siblings.map((r) => r.id),
+      index,
+    )
+  }
+
+  /** Open items of a list in one category (null = Other), in order. */
+  #inCategory(listId: string, categoryId: string | null) {
+    const known = new Set(this.categoriesOf(listId).map((c) => c.id))
+    return this.itemsOf(listId)
+      .filter((i) => !i.checked_at && (categoryId === null ? !i.category_id || !known.has(i.category_id) : i.category_id === categoryId))
+      .sort(byPosition)
+  }
+
+  /** Move an item to `index` within a category (null = Other) of a list, maybe another list. */
+  moveItem(item: Item, listId: string, categoryId: string | null, index: number) {
+    const siblings = this.#inCategory(listId, categoryId).filter((i) => i.id !== item.id)
+    const otherList = listId !== item.list_id
+    const otherCategory = otherList || categoryId !== (item.category_id ?? null)
+    const place = this.#slot(item, siblings, index)
+    item.list_id = listId
+    item.category_id = categoryId
+    if (otherCategory && !otherList) {
+      const c = this.known(item.name)
+      if (c) c.category_name = this.categories.find((x) => x.id === categoryId)?.name ?? c.category_name
+    }
+    const body = { ...place, category_id: categoryId, ...(otherList ? { list_id: listId } : {}) }
+    this.#sendItem(item.id, () => api.post<Item>(`/items/${item.id}/move`, body), (res) => upsert(this.items, res))
+  }
+
+  /** Move items to the end of another list, keeping a category of the same name. */
+  async moveItems(items: Item[], listId: string) {
+    const targetCats = this.categoriesOf(listId)
+    let last = lastKey(this.itemsOf(listId))
+    for (const it of items) {
+      const name = this.categories.find((c) => c.id === it.category_id)?.name
+      const want = name ? normalizeName(name) : null
+      it.category_id = (want && targetCats.find((c) => normalizeName(c.name) === want)?.id) || null
+      it.list_id = listId
+      last = keyBetween(last, null)
+      it.position = last
+    }
+    const list = this.list(listId)
+    toast(`Moved ${items.length} item${items.length === 1 ? '' : 's'} to ${list?.name ?? 'the list'}`)
+    const res = await this.#send(() => api.post<Item[]>('/items/move', { ids: items.map((i) => i.id), list_id: listId }))
+    if (res) for (const r of res) upsert(this.items, r)
+  }
+
+  async #move<T extends Positioned>(arr: T[], row: T, siblings: T[], index: number, url: string) {
+    const place = this.#slot(
+      row,
+      siblings.filter((r) => r.id !== row.id),
+      index,
+    )
+    const res = await this.#send(() => api.post<T>(url, place))
+    if (res) upsert(arr, res)
+  }
+
+  moveCategory(c: Category, index: number) {
+    return this.#move(this.categories, c, this.categoriesOf(c.list_id), index, `/categories/${c.id}/move`)
+  }
+  moveList(l: ShoppingList, index: number) {
+    return this.#move(this.lists, l, this.listsOf(l.shop_id), index, `/lists/${l.id}/move`)
+  }
+  moveShop(s: Shop, index: number) {
+    return this.#move(this.shops, s, this.sortedShops, index, `/shops/${s.id}/move`)
+  }
+  moveStaple(s: Staple, index: number) {
+    return this.#move(this.staples, s, this.staplesOf(s.shop_id), index, `/staples/${s.id}/move`)
   }
 
   // ---- catalogue management ------------------------------------------------------------------

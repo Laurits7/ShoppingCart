@@ -76,13 +76,20 @@ Items can be a specific brand with a picture ("milk by Alma"); see
 [Brands and pictures](products.md).
 
 ## Ordering and moving
-!!! note "Coming in Phase 3"
-    Drag and drop and moving items between lists arrive in the next phase. Until then new
-    things go to the end of their category.
+Drag things by their grip (the dotted handle on the left) to put them in order: items within a
+category or into another one, categories (on an open list), lists within a shop, shops, and
+staples. With a mouse you can also just drag an item's row; on a phone, press and hold a row
+for a moment to lift it, or drag the grip straight away. While you drag an item on an open
+list, empty categories appear so you can drop into them, and collapsed ones open.
 
-Drag items within a category or into another category; on a phone, press and hold to lift.
-With a keyboard: focus an item, press ++space++ to pick it up, the arrow keys to move it and
-++space++ to drop it. To move items to another list or shop, select them and choose *Move to…*.
+On the summary page you can drag an item from one list card into another, even in another
+shop; it keeps its category if the other list has one of the same name.
+
+To move several items at once, open the list, tap **Select…**, pick the items and choose
+**Move to…**. A single item can be moved from its **⋯** menu too.
+
+With a keyboard: focus a grip, press ++space++ to pick the thing up, the arrow keys to move it
+and ++space++ to drop it (++escape++ puts it back). Screen readers announce each step.
 
 ## Sharing
 Lists are private until you share them; see [Households and sharing](sharing.md).

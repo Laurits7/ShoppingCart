@@ -41,6 +41,9 @@ curl -H "Authorization: Bearer sc_…" http://cart.local:3100/api/v1/summary
 | `GET /catalog?q=milk&shop_id=…` | Suggestions from your item catalogue (without `q`: all of it) |
 | `GET /catalog/frequent?list_id=…` | What you buy most at the list's shop and isn't on the list |
 | `PATCH/DELETE /catalog/{id}`, `POST /catalog/merge` | Manage the catalogue |
+| `POST /items/{id}/move` | Reorder an item: `{"after": "<item id>"}` or `{"before": …}` (neither = the end); also `category_id` and `list_id` to move it to another category or list |
+| `POST /items/move` | `{"ids": [...], "list_id": "…"}`: move several items to another list |
+| `POST /categories/{id}/move`, `/lists/{id}/move`, `/shops/{id}/move`, `/staples/{id}/move` | Reorder: `{"after": …}` or `{"before": …}` |
 
 Adding milk to your supermarket's default list from a script:
 
@@ -58,7 +61,6 @@ curl -X POST -H "Authorization: Bearer sc_…" -H "Content-Type: application/jso
 | `GET/POST/PATCH/DELETE /catalog/{id}/products`, `/products/{id}` | Brands/products of a catalogue item; `PUT /catalog/{id}/preferred` |
 | `POST /images` · `GET /images/{id}` | Upload a picture (resized on the server) and fetch it |
 | `GET /lookup?q=` · `GET /lookup/barcode/{code}` | Search Open Food Facts for products and pictures |
-| `POST /items/{id}/move` | Move/reorder (`list_id`, `category_id`, `after`/`before`) |
 | `GET/POST/DELETE /lists/{id}/shares` | Sharing |
 | `GET /summary` | Open items per list, for Streamline and dashboards |
 | `/wishlists`, `/wish-items`, `/claims`, `/persons` | Wishlists and gifts |

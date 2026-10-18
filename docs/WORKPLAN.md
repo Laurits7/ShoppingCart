@@ -3,7 +3,7 @@
 > Companion to [`SPEC.md`](SPEC.md). Section numbers like §6.8 refer to the spec.
 > Status (2026-10-18): Phase 0 (spec, plan, docs skeleton) done. Part A and all Part C defaults
 > confirmed (D-12..D-21). **Phase 1 done** (D-22..D-26). **Phase 2 chunks done** (D-27..D-34); gate needs the owner's
-> manual check. **Next: Phase 3 (drag and drop).**
+> manual check. **Phase 3 chunks done** (D-35..D-38). **Next: Phase 3b (products and pictures).**
 > Legend: `[x]` done · `[~]` partly done (remaining work noted) · `[ ]` not started.
 
 ## How to use this plan
@@ -101,12 +101,13 @@ SQL) → SQLite (WAL, one writer pool of 1, reader pool) → event log row → S
       The shop switcher became a summary page of all lists with their items (D-34).
 
 ### Phase 3. Drag and drop
-- [ ] **3.1 Fractional indexing** in `domain::order` (keys between, rebalance), property tests;
+- [x] **3.1 Fractional indexing** in `domain::order` (keys between, rebalance), property tests;
       move endpoints for items (category/list/shop), categories, lists, shops, staples.
-- [ ] **3.2 DnD library** in `web/src/lib/dnd.svelte.ts`: pointer + touch long-press +
+- [x] **3.2 DnD library** in `web/src/lib/dnd.svelte.ts`: pointer + touch long-press +
       keyboard, auto-scroll, drop indicators, screen-reader announcements; vitest for maths.
-- [ ] **3.3 Wire DnD** into all shopping views; multi-select move to another list.
-- [ ] **Phase 3 gate**.
+- [x] **3.3 Wire DnD** into all shopping views; multi-select move to another list.
+- [~] **Phase 3 gate**: checks, tests and bundle (48 KB gzip) done; docker measurements and the
+      manual phone/desktop check (long-press, keyboard, screen reader) still to do.
 
 ### Phase 3b. Products and pictures (§6.4b)
 - [ ] **3b.1 Images**: upload endpoint with type sniffing and limits, resize/re-encode to two

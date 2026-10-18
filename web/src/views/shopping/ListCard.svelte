@@ -5,6 +5,7 @@
   import type { ShoppingList } from '../../lib/api/types/ShoppingList'
   import { collapsed } from '../../lib/collapsed.svelte'
   import Icon from '../../lib/components/Icon.svelte'
+  import { draggable, dropList, type DragItem } from '../../lib/dnd.svelte'
   import { shopping } from '../../lib/shopping.svelte'
   import ItemRow from './ItemRow.svelte'
   import QuickAdd from './QuickAdd.svelte'
@@ -23,10 +24,29 @@
   const key = $derived(`list:${list.id}`)
   const isCollapsed = $derived(collapsed.has(key))
   let showCart = $state(false)
+
+  // Items can be dropped here from any list on the page.
+  const itemDrop = (categoryId: string | null) => ({
+    accepts: (it: DragItem) => it.kind === 'item' && !readonly,
+    drop: (it: DragItem, index: number) => move(it.id, index, categoryId),
+    keyMove: (id: string, index: number) => move(id, index, categoryId),
+  })
+  function move(id: string, index: number, categoryId: string | null = null) {
+    const item = shopping.items.find((i) => i.id === id)
+    if (item) shopping.moveItem(item, list.id, categoryId, index)
+  }
 </script>
 
-<article class="card">
+<article
+  class="card"
+  data-id={list.id}
+  data-label={list.name}
+  use:draggable={{ item: () => ({ kind: 'list', id: list.id, shopId: list.shop_id }), disabled: list.role !== 'owner', handleOnly: true }}
+>
   <header>
+    {#if list.role === 'owner'}
+      <span class="grip" data-handle tabindex="0" role="button" aria-label="Move list {list.name}" aria-roledescription="draggable"><Icon name="grip" size={16} /></span>
+    {/if}
     <button class="icon-btn" aria-expanded={!isCollapsed} aria-label="{isCollapsed ? 'Show' : 'Hide'} items of {list.name}" onclick={() => collapsed.toggle(key)}>
       <span class="chev" class:collapsed={isCollapsed}><Icon name="chevronDown" size={18} /></span>
     </button>
@@ -43,14 +63,14 @@
 
   {#if !isCollapsed}
     {#if sections.length}
-      <ul>
-        {#each sections as s (s.id)}
-          {#if sections.length > 1 || s.id !== 'other'}<li class="cat" aria-hidden="true">{s.name}</li>{/if}
+      {#each sections as s (s.id)}
+        {#if sections.length > 1 || s.id !== 'other'}<div class="cat" aria-hidden="true">{s.name}</div>{/if}
+        <ul use:dropList={itemDrop(s.id === 'other' ? null : s.id)}>
           {#each s.items as item (item.id)}<ItemRow {item} {readonly} {onedit} />{/each}
-        {/each}
-      </ul>
+        </ul>
+      {/each}
     {:else}
-      <p class="muted nothing">Nothing to buy.</p>
+      <div class="nothing" use:dropList={itemDrop(null)}><p class="muted">Nothing to buy.</p></div>
     {/if}
     {#if !readonly}
       <div class="add"><QuickAdd listId={list.id} shopId={list.shop_id} compact placeholder="Add to {list.name}…" /></div>
@@ -82,6 +102,7 @@
     align-items: center;
     gap: 2px;
     padding: 2px 4px 2px 0;
+    background: var(--surface);
   }
   .title {
     flex: 1;
@@ -125,9 +146,14 @@
     border-top: 1px solid var(--border);
   }
   .nothing {
-    margin: 0;
     padding: 10px 14px;
     border-top: 1px solid var(--border);
+  }
+  .nothing p {
+    margin: 0;
+  }
+  header .grip {
+    margin-left: 2px;
   }
   .add {
     padding: 10px 12px;
