@@ -4,9 +4,8 @@ A lean, self-hosted **shopping list and wishlist** app for a household. One smal
 one data folder, and it works from any phone, tablet or computer on your network.
 
 !!! info "Status"
-    ShoppingCart is in development. Sign-in, users, households and API tokens work today
-    (Phase 1 of the [work plan](WORKPLAN.md)). The other pages describe how it works once each
-    phase has landed; pages for features that don't exist yet say so.
+    Everything described here works, ready for version 1.0.0. What changed between versions is
+    in the [changelog](https://github.com/Laurits7/ShoppingCart/blob/main/CHANGELOG.md).
 
 - **Shopping lists per shop**: categories, drag-and-drop ordering, templates of your usual
   items, and an inbox. See [Shops and lists](guides/shopping.md).

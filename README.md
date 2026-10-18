@@ -30,7 +30,9 @@ What changed between versions is in the [changelog](CHANGELOG.md).
 
 ## Documentation
 
-The docs live in [`docs/`](docs/index.md) (MkDocs). To preview them:
+**Read them at <https://laurits7.github.io/ShoppingCart/>**: installing, HTTPS, backups, every
+feature, the API and the integrations. They're built from [`docs/`](docs/index.md) (MkDocs) on
+every push to `main`. To preview them locally:
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -r docs/requirements.txt
