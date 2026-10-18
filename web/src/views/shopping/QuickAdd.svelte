@@ -3,7 +3,6 @@
   import type { CatalogItem } from '../../lib/api/types/CatalogItem'
   import { normalizeName } from '../../lib/catalog'
   import Icon from '../../lib/components/Icon.svelte'
-  import ScanSheet from '../../lib/components/ScanSheet.svelte'
   import Thumb from '../../lib/components/Thumb.svelte'
   import { label } from '../../lib/products'
   import { shopping } from '../../lib/shopping.svelte'
@@ -120,7 +119,11 @@
   {/if}
 </form>
 
-<ScanSheet bind:open={scanOpen} title="Scan to add" onfound={(code) => shopping.addScanned(listId, code)} />
+{#if scanOpen}
+  {#await import('../../lib/components/ScanSheet.svelte') then m}
+    <m.default bind:open={scanOpen} title="Scan to add" onfound={(code: string) => shopping.addScanned(listId, code)} />
+  {/await}
+{/if}
 
 <style>
   .quick {

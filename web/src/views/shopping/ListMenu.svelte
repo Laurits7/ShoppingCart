@@ -4,6 +4,7 @@
   import Sheet from '../../lib/components/Sheet.svelte'
   import { router } from '../../lib/router.svelte'
   import { shopping } from '../../lib/shopping.svelte'
+  import ShareSheet from './ShareSheet.svelte'
 
   let { open = $bindable(false), list }: { open: boolean; list: ShoppingList } = $props()
   const shop = $derived(shopping.shop(list.shop_id))
@@ -11,6 +12,7 @@
   let listName = $state('')
   let shopName = $state('')
   let newCategory = $state('')
+  let shareOpen = $state(false)
 
   $effect(() => {
     if (open) {
@@ -57,6 +59,17 @@
 </script>
 
 <Sheet bind:open title="List and shop">
+  <section>
+    <h3>Sharing</h3>
+    {#if owner}
+      <p class="muted small">Private until you share it with people or a household.</p>
+    {:else}
+      <p class="muted small">{list.owner_name}'s list ({list.shop_name}); you {list.role === 'editor' ? 'can edit it' : 'can view it'}.</p>
+    {/if}
+    <div class="actions">
+      <button class="btn small" onclick={() => ((open = false), (shareOpen = true))}>{owner ? 'Share…' : 'Who can see it…'}</button>
+    </div>
+  </section>
   {#if owner}
     <section>
       <h3>List</h3>
@@ -123,6 +136,8 @@
     </section>
   {/if}
 </Sheet>
+
+<ShareSheet bind:open={shareOpen} {list} />
 
 <style>
   section {

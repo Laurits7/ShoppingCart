@@ -86,7 +86,7 @@
     <a class="back" href="/"><Icon name="chevronRight" size={18} /> All lists</a>
     <header class="list-head">
       <span class="titles">
-        <span class="shop"><span class="dot" style:background={shop?.color ?? undefined}></span>{shop?.name ?? 'Shared list'}</span>
+        <span class="shop"><span class="dot" style:background={shop?.color ?? undefined}></span>{shop?.name ?? `${current.shop_name} · ${current.owner_name}'s list`}</span>
         <h1>{current.name}{#if current.archived_at}<span class="muted small"> (archived)</span>{/if}</h1>
       </span>
       <span class="tools">

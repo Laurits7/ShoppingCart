@@ -26,13 +26,11 @@ jobs:
         working-directory: web
       - run: npm run check && npm test && npm run build
         working-directory: web
-      # Keep the initial load small (SPEC §4.1: < 60 KB gzip for JS + CSS).
+      # Keep the initial load small (SPEC §4.1: < 60 KB gzip for the JS + CSS that index.html
+      # loads; pages and sheets loaded later on demand don't count).
       - name: Bundle size
         working-directory: web
-        run: |
-          total=$(cat dist/assets/*.js dist/assets/*.css | gzip -9 | wc -c)
-          echo "JS + CSS: $((total / 1024)) KB gzip"
-          test "$total" -lt 61440
+        run: ../scripts/initial-size.sh
       - uses: actions/upload-artifact@v4
         with:
           name: web-dist

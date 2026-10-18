@@ -5,12 +5,15 @@
   import Toasts from './lib/components/Toasts.svelte'
   import { match, router } from './lib/router.svelte'
   import { session } from './lib/session.svelte'
+  import { connect, disconnect } from './lib/live'
   import { shopping } from './lib/shopping.svelte'
   import Login from './views/Login.svelte'
-  import Settings from './views/Settings.svelte'
-  import CatalogSettings from './views/settings/Catalog.svelte'
   import Shopping from './views/Shopping.svelte'
-  import Wishlist from './views/Wishlist.svelte'
+
+  // Only the Shopping tab is in the first download; other pages load when opened (SPEC §4.1).
+  const settings = () => import('./views/Settings.svelte')
+  const catalogSettings = () => import('./views/settings/Catalog.svelte')
+  const wishlist = () => import('./views/Wishlist.svelte')
 
   let phase = $state<'loading' | 'login' | 'setup' | 'app' | 'error'>('loading')
 
@@ -19,6 +22,9 @@
     shopping.reset()
     try {
       await session.load()
+      // Send what was waiting from last time, and listen for changes from elsewhere.
+      shopping.outbox.start(session.me!.id)
+      connect(() => shopping.sync())
       phase = 'app'
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
@@ -37,6 +43,8 @@
   boot()
   onUnauthorized(() => {
     if (phase === 'app') {
+      // Changes not sent yet stay queued for after signing in again.
+      disconnect()
       session.me = null
       shopping.reset()
       phase = 'login'
@@ -44,6 +52,13 @@
   })
 
   const route = $derived(match(router.path))
+
+  // Back online: send what's waiting and catch up.
+  window.addEventListener('online', () => {
+    shopping.outbox.retry()
+    shopping.sync()
+  })
+  const offline = $derived(!shopping.outbox.online)
   const tabs: { path: string; name: string; label: string; icon: IconName }[] = [
     { path: '/', name: 'shopping', label: 'Shopping', icon: 'cart' },
     { path: '/wishlist', name: 'wishlist', label: 'Wishlist', icon: 'gift' },
@@ -72,15 +87,20 @@
       {/each}
     </nav>
     <main>
+      {#if offline}
+        <div class="offline" role="status">
+          Offline{#if shopping.outbox.pending}: {shopping.outbox.pending} change{shopping.outbox.pending === 1 ? '' : 's'} waiting{/if}. Keep going; they're sent when the connection is back.
+        </div>
+      {/if}
       {#if route.name === 'shopping'}
         <Shopping listId={route.listId} />
       {:else if route.name === 'wishlist'}
-        <Wishlist />
+        {#await wishlist() then m}<m.default />{/await}
       {:else if route.name === 'settings'}
         {#if route.page === 'catalog'}
-          <CatalogSettings />
+          {#await catalogSettings() then m}<m.default />{/await}
         {:else}
-          <Settings onlogout={() => ((session.me = null), shopping.reset(), (phase = 'login'))} />
+          {#await settings() then m}<m.default onlogout={() => (disconnect(), (session.me = null), shopping.reset(true), (phase = 'login'))} />{/await}
         {/if}
       {:else}
         <h1>Not found</h1>
@@ -93,6 +113,17 @@
 <div class="sr-only" aria-live="assertive">{live.message}</div>
 
 <style>
+  .offline {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin: -8px 0 12px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--star-soft);
+    color: var(--text);
+    font-size: 14px;
+  }
   .center {
     min-height: 100dvh;
     display: grid;

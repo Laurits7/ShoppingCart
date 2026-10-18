@@ -58,8 +58,11 @@
       <span class="chev" class:collapsed={isCollapsed}><Icon name="chevronDown" size={18} /></span>
     </button>
     <a class="title" href="/list/{list.id}">
-      {list.name}
-      {#if list.is_default}<span class="star" title="Default list" aria-label="default list"><Icon name="star" size={15} /></span>{/if}
+      <span>
+        {list.name}
+        {#if list.role !== 'owner'}<span class="from">{list.shop_name} · {list.owner_name}{list.role === 'viewer' ? ' · view only' : ''}</span>{/if}
+      </span>
+      {#if list.is_default && list.role === 'owner'}<span class="star" title="Default list" aria-label="default list"><Icon name="star" size={15} /></span>{/if}
     </a>
     <span class="badge" aria-label="{open} open items">{open}</span>
     {#if list.role === 'owner'}
@@ -126,6 +129,15 @@
   }
   .title:hover {
     text-decoration: underline;
+  }
+  .title > span {
+    display: flex;
+    flex-direction: column;
+  }
+  .from {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
   }
   .star {
     display: grid;

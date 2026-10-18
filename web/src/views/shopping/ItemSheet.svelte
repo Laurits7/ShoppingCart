@@ -5,7 +5,6 @@
   import { shopping } from '../../lib/shopping.svelte'
   import { toast } from '../../lib/toast.svelte'
   import MoveSheet from './MoveSheet.svelte'
-  import ProductSheet from './ProductSheet.svelte'
 
   let { item, open = $bindable(false), focus }: { item: Item | null; open: boolean; focus?: 'amount' } = $props()
 
@@ -106,4 +105,9 @@
 </Sheet>
 
 {#if item}<MoveSheet bind:open={moveOpen} items={[item]} />{/if}
-{#if item && entry}<ProductSheet bind:open={brandOpen} catalogId={entry.id} {item} shopId={shopping.list(item.list_id)?.shop_id ?? null} />{/if}
+{#if item && entry && brandOpen}
+  <!-- The brand chooser (with the Open Food Facts search) loads when first opened. -->
+  {#await import('./ProductSheet.svelte') then m}
+    <m.default bind:open={brandOpen} catalogId={entry.id} {item} shopId={shopping.list(item.list_id)?.shop_id ?? null} />
+  {/await}
+{/if}

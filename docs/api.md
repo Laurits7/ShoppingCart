@@ -41,6 +41,9 @@ curl -H "Authorization: Bearer sc_…" http://cart.local:3100/api/v1/summary
 | `GET /catalog?q=milk&shop_id=…` | Suggestions from your item catalogue (without `q`: all of it) |
 | `GET /catalog/frequent?list_id=…` | What you buy most at the list's shop and isn't on the list |
 | `PATCH/DELETE /catalog/{id}`, `POST /catalog/merge` | Manage the catalogue |
+| `GET /sync?since=<rev>` | What changed since `rev` (0: everything): rows, `deleted`, `visible_lists` and the new `rev` |
+| `GET /events` | Server-sent events: `change` (with the new rev) when something you can see changed; then call `/sync`. `POST /events/ticket` gives a one-time `?ticket=` for clients that can't send headers |
+| `GET/POST /lists/{id}/shares`, `PATCH/DELETE /shares/{id}` | Sharing: `{"principal_type": "user" \| "household", "principal_id": "…", "role": "editor" \| "viewer"}`; delete your own share to leave |
 | `POST /items/{id}/move` | Reorder an item: `{"after": "<item id>"}` or `{"before": …}` (neither = the end); also `category_id` and `list_id` to move it to another category or list |
 | `POST /items/move` | `{"ids": [...], "list_id": "…"}`: move several items to another list |
 | `POST /categories/{id}/move`, `/lists/{id}/move`, `/shops/{id}/move`, `/staples/{id}/move` | Reorder: `{"after": …}` or `{"before": …}` |
@@ -61,11 +64,20 @@ curl -X POST -H "Authorization: Bearer sc_…" -H "Content-Type: application/jso
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /sync?since=<rev>` | Everything you can see (`since=0`) or changed since `rev`, including deletions |
-| `GET /events` | Server-sent events with live changes |
-| `GET/POST/DELETE /lists/{id}/shares` | Sharing |
 | `GET /summary` | Open items per list, for Streamline and dashboards |
 | `/wishlists`, `/wish-items`, `/claims`, `/persons` | Wishlists and gifts |
+
+Keeping a dashboard up to date:
+
+```sh
+rev=0
+curl -s -N -H "Authorization: Bearer sc_…" http://cart.local:3100/api/v1/events |
+  while read -r line; do
+    case "$line" in data:*) curl -s -H "Authorization: Bearer sc_…" \
+      "http://cart.local:3100/api/v1/sync?since=$rev" > latest.json
+      rev=$(jq .rev latest.json);; esac
+  done
+```
 
 ## Conventions
 - Ids are [ULIDs](https://github.com/ulid/spec). Clients may choose the id when creating

@@ -4,6 +4,7 @@ pub mod auth;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod events;
 pub mod images;
 pub mod lookup;
 pub mod models;
@@ -25,6 +26,10 @@ pub struct App {
     pub login_failures: Mutex<HashMap<String, (u32, Instant)>>,
     /// For product lookups; `None` when they're switched off.
     pub http: Option<reqwest::Client>,
+    /// Live updates for `/events`.
+    pub bus: events::Bus,
+    /// One-time tickets for `/events`: ticket → (user id, issued).
+    pub tickets: Mutex<HashMap<String, (String, Instant)>>,
 }
 
 pub type AppState = Arc<App>;
@@ -42,6 +47,8 @@ pub async fn build(config: config::Config) -> anyhow::Result<(axum::Router, AppS
         db,
         login_failures: Mutex::new(HashMap::new()),
         http,
+        bus: events::Bus::default(),
+        tickets: Mutex::new(HashMap::new()),
     });
     auth::bootstrap_admin(&state).await?;
     Ok((routes::router(state.clone()), state))

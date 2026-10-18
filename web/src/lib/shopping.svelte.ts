@@ -1,7 +1,8 @@
-// Client-side copy of the Shopping tab: shops, lists, categories, items, staples and the
-// item catalogue. Changes are applied here first (instant UI) and then sent; the server's
-// answer replaces the local guess. If the server refuses, the store reloads. (The persistent
-// outbox for flaky connections comes in Phase 4.)
+// Client-side copy of the Shopping tab: shops, lists, categories, items, staples, the item
+// catalogue and products. Changes are applied here first (instant UI). Item and category
+// changes go through the outbox (sent in order, kept across a dead zone); shop, list,
+// catalogue and product changes need the connection. Other devices' changes arrive by
+// `/sync` when the event stream says something changed (lib/live.ts).
 
 import { api, ApiError, message } from './api/client'
 import type { AddedItem } from './api/types/AddedItem'
@@ -17,9 +18,9 @@ import type { ProductPreference } from './api/types/ProductPreference'
 import type { Shop } from './api/types/Shop'
 import type { ShopBundle } from './api/types/ShopBundle'
 import type { ShoppingData } from './api/types/ShoppingData'
+import { IdbStore, MemoryStore, Outbox, type Entry } from './outbox.svelte'
 import type { ShoppingList } from './api/types/ShoppingList'
 import type { Staple } from './api/types/Staple'
-import type { Stepped } from './api/types/Stepped'
 import { combine, formatAmount, step as stepAmount } from './amount'
 import { frequent as rankFrequent, normalizeName, rank, type Usage } from './catalog'
 import { neighbours } from './dndmath'
@@ -69,11 +70,25 @@ class ShoppingStore {
   products = $state<Product[]>([])
   preferences = $state<ProductPreference[]>([])
   images = $state<Image[]>([])
-  /** Requests in flight per item: an older answer must not overwrite a newer local change. */
-  #pending = new Map<string, number>()
+  /** The rev of the last sync. */
+  rev = 0
+  outbox = new Outbox(typeof indexedDB === 'undefined' ? new MemoryStore() : new IdbStore(), (e) => api.send(e.method, e.path, e.body))
+  #syncing: Promise<void> | null = null
+  #again = false
 
-  /** Forget everything (signed out). */
-  reset() {
+  constructor() {
+    this.outbox.onrefused = ({ error }) => {
+      toast(error.message, 'error')
+      this.load().catch(() => {})
+    }
+    // Once everything waiting is through, catch up with what others did meanwhile.
+    this.outbox.ondrained = () => void this.sync()
+  }
+
+  /** Forget everything (signed out); `queue` also drops changes not yet sent. */
+  reset(queue = false) {
+    if (queue) this.outbox.clear()
+    this.rev = 0
     this.loaded = false
     this.shops = []
     this.lists = []
@@ -87,17 +102,90 @@ class ShoppingStore {
   }
 
   async load() {
-    const d = await api.get<ShoppingData>('/shopping')
+    const d = await api.get<ShoppingData>('/sync?since=0')
+    // Changes still waiting in the outbox stay as they are locally.
+    const waiting = this.outbox.keys()
+    const keep = <T extends { id: string }>(fresh: T[], old: T[]) => [...fresh.filter((r) => !waiting.has(r.id)), ...old.filter((r) => waiting.has(r.id))]
+    this.rev = d.rev
     this.shops = d.shops
     this.lists = d.lists
-    this.categories = d.categories
-    this.items = d.items
+    this.categories = keep(d.categories, this.categories)
+    this.items = keep(d.items, this.items)
     this.staples = d.staples
     this.catalog = d.catalog
     this.products = d.products
     this.preferences = d.preferences
     this.images = d.images
     this.loaded = true
+  }
+
+  /** Catch up with changes made elsewhere since the last sync. */
+  sync(): Promise<void> {
+    if (!this.loaded) return Promise.resolve()
+    if (this.#syncing) {
+      this.#again = true
+      return this.#syncing
+    }
+    this.#syncing = (async () => {
+      try {
+        do {
+          this.#again = false
+          await this.#syncOnce()
+        } while (this.#again)
+      } catch {
+        /* offline: the next nudge or reconnect tries again */
+      } finally {
+        this.#syncing = null
+      }
+    })()
+    return this.#syncing
+  }
+
+  async #syncOnce() {
+    const d = await api.get<ShoppingData>(`/sync?since=${this.rev}`)
+    const known = new Set(this.lists.map((l) => l.id))
+    // A list newly shared with me: its older items aren't in the delta, so load everything.
+    if (d.visible_lists.some((id) => !known.has(id))) return this.load()
+    const waiting = this.outbox.keys()
+    const merge = <T extends { id: string }>(arr: T[], rows: T[]) => {
+      for (const r of rows) if (!waiting.has(r.id)) upsert(arr, r)
+    }
+    merge(this.shops, d.shops)
+    merge(this.lists, d.lists)
+    merge(this.categories, d.categories)
+    merge(this.items, d.items)
+    merge(this.staples, d.staples)
+    merge(this.catalog, d.catalog)
+    merge(this.products, d.products)
+    this.preferences = d.preferences
+    this.images = d.images
+    const gone: Record<string, Set<string>> = {}
+    for (const x of d.deleted) (gone[x.kind] ??= new Set()).add(x.id)
+    const drop = <T extends { id: string }>(arr: T[], kind: string) => gone[kind] && removeWhere(arr, (r) => gone[kind].has(r.id) && !waiting.has(r.id))
+    drop(this.shops, 'shop')
+    drop(this.lists, 'list')
+    drop(this.categories, 'category')
+    drop(this.items, 'item')
+    drop(this.staples, 'staple')
+    drop(this.catalog, 'catalog')
+    drop(this.products, 'product')
+    // Lists I can no longer see (unshared, left, deleted) go, with everything on them.
+    const visible = new Set(d.visible_lists)
+    const lost = new Set(this.lists.filter((l) => !visible.has(l.id)).map((l) => l.id))
+    if (lost.size) {
+      removeWhere(this.items, (i) => lost.has(i.list_id))
+      removeWhere(this.categories, (c) => lost.has(c.list_id))
+      removeWhere(this.lists, (l) => lost.has(l.id))
+    }
+    this.rev = d.rev
+  }
+
+  /** Queue a change; `apply` gets the server's answer unless a newer change to the same
+   * thing is still waiting. */
+  #queue<T>(e: Omit<Entry, 'user'>, apply?: (res: T) => void) {
+    this.outbox.add({ ...e, user: session.me?.id ?? '' }).then((res) => {
+      if (res !== undefined && apply && !(e.key && this.outbox.keys().has(e.key))) apply(res as T)
+    })
   }
 
   /** Send a change; on failure say why and resync with the server. */
@@ -111,15 +199,6 @@ class ShoppingStore {
     }
   }
 
-  /** Send a change to one item; its answer is applied only if no newer change is on the way. */
-  async #sendItem<T>(id: string, req: () => Promise<T>, apply: (res: T) => void) {
-    this.#pending.set(id, (this.#pending.get(id) ?? 0) + 1)
-    const res = await this.#send(req)
-    const left = (this.#pending.get(id) ?? 1) - 1
-    if (left) this.#pending.set(id, left)
-    else this.#pending.delete(id)
-    if (res !== undefined && !left) apply(res)
-  }
 
   // ---- queries -----------------------------------------------------------------------
 
@@ -240,7 +319,7 @@ class ShoppingStore {
   /** Pin an item to a product, or make it generic again (null). */
   pin(item: Item, productId: string | null) {
     item.product_id = productId
-    this.#sendItem(item.id, () => api.patch<Item>(`/items/${item.id}`, { product_id: productId }), (res) => upsert(this.items, res))
+    this.#queue<Item>({ method: 'PATCH', path: `/items/${item.id}`, body: { product_id: productId }, key: item.id }, (res) => upsert(this.items, res))
   }
 
   lookup(q: string) {
@@ -439,17 +518,13 @@ class ShoppingStore {
   add(listId: string, input: NewItem) {
     const { id, body, merged } = this.#applyAdd(listId, input)
     if (merged) this.#mergedToast(merged)
-    this.#sendItem(
-      merged?.item.id ?? id,
-      () => api.post<AddedItem>(`/lists/${listId}/items`, body),
-      (res) => this.#applyAdded(id, res),
-    )
+    this.#queue<AddedItem>({ method: 'POST', path: `/lists/${listId}/items`, body, key: merged?.item.id ?? id }, (res) => this.#applyAdded(id, res))
   }
 
   tick(item: Item, checked: boolean) {
     item.checked_at = checked ? now() : null
     item.checked_by = checked ? (session.me?.id ?? null) : null
-    this.#sendItem(item.id, () => api.patch<Item>(`/items/${item.id}`, { checked }), (res) => upsert(this.items, res))
+    this.#queue<Item>({ method: 'PATCH', path: `/items/${item.id}`, body: { checked }, key: item.id }, (res) => upsert(this.items, res))
   }
 
   step(item: Item, up: boolean) {
@@ -459,7 +534,8 @@ class ShoppingStore {
       return
     }
     item.amount = next
-    this.#sendItem(item.id, () => api.post<Stepped>(`/items/${item.id}/step`, { by: up ? 1 : -1 }), (res) => upsert(this.items, res.item))
+    // The new amount rather than "one more", so a retried request can't count twice.
+    this.#queue<Item>({ method: 'PATCH', path: `/items/${item.id}`, body: { amount: next }, key: item.id }, (res) => upsert(this.items, res))
   }
 
   editItem(item: Item, patch: { name?: string; amount?: number; unit?: string | null; step?: number | null; note?: string; category_id?: string | null }) {
@@ -469,27 +545,28 @@ class ShoppingStore {
       if (c) c.category_name = this.categories.find((x) => x.id === patch.category_id)?.name ?? null
     }
     const body = { ...patch, ...('unit' in patch ? { unit: patch.unit ?? '' } : {}) }
-    this.#sendItem(item.id, () => api.patch<Item>(`/items/${item.id}`, body), (res) => upsert(this.items, res))
+    this.#queue<Item>({ method: 'PATCH', path: `/items/${item.id}`, body, key: item.id }, (res) => upsert(this.items, res))
   }
 
   remove(item: Item) {
     removeWhere(this.items, (i) => i.id === item.id)
-    this.#send(() => api.del(`/items/${item.id}`))
+    this.#queue({ method: 'DELETE', path: `/items/${item.id}`, key: item.id })
     toast(`Removed ${item.name}`, 'info', { label: 'Undo', run: () => this.restore([item]) })
   }
 
-  async restore(rows: Item[]) {
+  restore(rows: Item[]) {
     for (const r of rows) upsert(this.items, r)
-    const res = await this.#send(() => api.post<Item[]>('/items/restore', { ids: rows.map((r) => r.id) }))
-    if (res) for (const r of res) upsert(this.items, r)
+    this.#queue<Item[]>({ method: 'POST', path: '/items/restore', body: { ids: rows.map((r) => r.id) } }, (res) => {
+      for (const r of res) upsert(this.items, r)
+    })
   }
 
-  async finish(listId: string) {
+  finish(listId: string) {
     const done = this.itemsOf(listId).filter((i) => i.checked_at)
     if (!done.length) return
     removeWhere(this.items, (i) => i.list_id === listId && !!i.checked_at)
     toast(`Finished: ${done.length} item${done.length === 1 ? '' : 's'} cleared`, 'info', { label: 'Undo', run: () => this.restore(done) })
-    await this.#send(() => api.post<Finished>(`/lists/${listId}/finish`))
+    this.#queue<Finished>({ method: 'POST', path: `/lists/${listId}/finish`, body: {} })
   }
 
   // ---- staples ---------------------------------------------------------------------------
@@ -500,7 +577,7 @@ class ShoppingStore {
       return { staple_id: s.id, id: r.id }
     })
     if (staples.length) toast(`Added ${staples.length} staple${staples.length === 1 ? '' : 's'}`)
-    this.#send(() => api.post<AddedItem[]>(`/lists/${listId}/staples`, { staples: sent })).then((res) => res?.forEach((r, i) => this.#applyAdded(sent[i].id, r)))
+    this.#queue<AddedItem[]>({ method: 'POST', path: `/lists/${listId}/staples`, body: { staples: sent } }, (res) => res.forEach((r, i) => this.#applyAdded(sent[i].id, r)))
   }
 
   /** The list's category of that name: undefined (let the catalogue decide) if none given. */
@@ -587,24 +664,22 @@ class ShoppingStore {
     await this.#send(() => api.del(`/lists/${list.id}`))
   }
 
-  async createCategory(listId: string, name: string) {
+  createCategory(listId: string, name: string) {
     const id = ulid()
     const ts = now()
     this.categories.push({ id, list_id: listId, name, position: keyBetween(lastKey(this.categoriesOf(listId)), null), created_at: ts, updated_at: ts, rev: 0 })
-    const res = await this.#send(() => api.post<Category>(`/lists/${listId}/categories`, { id, name }))
-    if (res) upsert(this.categories, res)
+    this.#queue<Category>({ method: 'POST', path: `/lists/${listId}/categories`, body: { id, name }, key: id }, (res) => upsert(this.categories, res))
   }
 
-  async renameCategory(c: Category, name: string) {
+  renameCategory(c: Category, name: string) {
     c.name = name
-    const res = await this.#send(() => api.patch<Category>(`/categories/${c.id}`, { name }))
-    if (res) upsert(this.categories, res)
+    this.#queue<Category>({ method: 'PATCH', path: `/categories/${c.id}`, body: { name }, key: c.id }, (res) => upsert(this.categories, res))
   }
 
-  async deleteCategory(c: Category) {
+  deleteCategory(c: Category) {
     for (const i of this.items) if (i.category_id === c.id) i.category_id = null
     removeWhere(this.categories, (x) => x.id === c.id)
-    await this.#send(() => api.del(`/categories/${c.id}`))
+    this.#queue({ method: 'DELETE', path: `/categories/${c.id}`, key: c.id })
   }
 
   // ---- moving (drag and drop) -----------------------------------------------------------------
@@ -642,11 +717,11 @@ class ShoppingStore {
       if (c) c.category_name = this.categories.find((x) => x.id === categoryId)?.name ?? c.category_name
     }
     const body = { ...place, category_id: categoryId, ...(otherList ? { list_id: listId } : {}) }
-    this.#sendItem(item.id, () => api.post<Item>(`/items/${item.id}/move`, body), (res) => upsert(this.items, res))
+    this.#queue<Item>({ method: 'POST', path: `/items/${item.id}/move`, body, key: item.id }, (res) => upsert(this.items, res))
   }
 
   /** Move items to the end of another list, keeping a category of the same name. */
-  async moveItems(items: Item[], listId: string) {
+  moveItems(items: Item[], listId: string) {
     const targetCats = this.categoriesOf(listId)
     let last = lastKey(this.itemsOf(listId))
     for (const it of items) {
@@ -659,8 +734,9 @@ class ShoppingStore {
     }
     const list = this.list(listId)
     toast(`Moved ${items.length} item${items.length === 1 ? '' : 's'} to ${list?.name ?? 'the list'}`)
-    const res = await this.#send(() => api.post<Item[]>('/items/move', { ids: items.map((i) => i.id), list_id: listId }))
-    if (res) for (const r of res) upsert(this.items, r)
+    this.#queue<Item[]>({ method: 'POST', path: '/items/move', body: { ids: items.map((i) => i.id), list_id: listId } }, (res) => {
+      for (const r of res) upsert(this.items, r)
+    })
   }
 
   async #move<T extends Positioned>(arr: T[], row: T, siblings: T[], index: number, url: string) {
@@ -674,7 +750,12 @@ class ShoppingStore {
   }
 
   moveCategory(c: Category, index: number) {
-    return this.#move(this.categories, c, this.categoriesOf(c.list_id), index, `/categories/${c.id}/move`)
+    const place = this.#slot(
+      c,
+      this.categoriesOf(c.list_id).filter((x) => x.id !== c.id),
+      index,
+    )
+    this.#queue<Category>({ method: 'POST', path: `/categories/${c.id}/move`, body: place, key: c.id }, (res) => upsert(this.categories, res))
   }
   moveList(l: ShoppingList, index: number) {
     return this.#move(this.lists, l, this.listsOf(l.shop_id), index, `/lists/${l.id}/move`)

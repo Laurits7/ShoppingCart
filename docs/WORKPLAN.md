@@ -3,7 +3,7 @@
 > Companion to [`SPEC.md`](SPEC.md). Section numbers like §6.8 refer to the spec.
 > Status (2026-10-18): Phase 0 (spec, plan, docs skeleton) done. Part A and all Part C defaults
 > confirmed (D-12..D-21). **Phase 1 done** (D-22..D-26). **Phase 2 chunks done** (D-27..D-34); gate needs the owner's
-> manual check. **Phase 3 chunks done** (D-35..D-38). **Phase 3b chunks done** (D-39..D-43). **Next: Phase 4 (live sync and sharing).**
+> manual check. **Phase 3 chunks done** (D-35..D-38). **Phase 3b chunks done** (D-39..D-43). **Phase 4 chunks done** (D-44..D-49). **Next: Phase 5 (wishlists).**
 > Legend: `[x]` done · `[~]` partly done (remaining work noted) · `[ ]` not started.
 
 ## How to use this plan
@@ -128,14 +128,16 @@ SQL) → SQLite (WAL, one writer pool of 1, reader pool) → event log row → S
       the manual check (camera photo, barcode scan over HTTPS) still to do.
 
 ### Phase 4. Live sync and sharing
-- [ ] **4.1 Event log, `/sync`, SSE** with per-subscriber visibility filter and SSE tickets.
-- [ ] **4.2 Outbox** (IndexedDB) with ordered retry, offline banner, catch-up on reconnect.
-- [ ] **4.3 List sharing** (§6.8): shares table, user/household principals, editor/viewer,
+- [x] **4.1 Event log, `/sync`, SSE** (a rev scan instead of an event-log table, D-45) with per-subscriber visibility filter and SSE tickets.
+- [x] **4.2 Outbox** (IndexedDB) with ordered retry, offline banner, catch-up on reconnect.
+- [x] **4.3 List sharing** (§6.8): shares table, user/household principals, editor/viewer,
       visibility module extended, revocation closes access on live connections; tests for every
       endpoint.
-- [ ] **4.4 Share UI**: share sheet, "shared with me" on the summary page, leave list.
-- [ ] **4.5 Docs**: "Households and sharing" guide.
-- [ ] **Phase 4 gate**.
+- [x] **4.4 Share UI**: share sheet, "shared with me" on the summary page, leave list.
+- [x] **4.5 Docs**: "Households and sharing" guide.
+- [~] **Phase 4 gate**: checks, tests, docs, an end-to-end run (share, live nudge, sync, revoke)
+      done; docker measurements and the manual two-phone check (live updates, airplane mode with
+      the outbox) still to do.
 
 ### Phase 5. Wishlists
 - [ ] **5.1 API**: persons, wishlists (own/gift), sections, items, received archive, sharing via

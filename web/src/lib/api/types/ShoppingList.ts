@@ -13,6 +13,14 @@ is_default: boolean,
  */
 role: 'owner' | 'editor' | 'viewer', 
 /**
+ * The shop it belongs to (for lists shared with you, the owner's shop).
+ */
+shop_name: string, 
+/**
+ * Who owns it (display name).
+ */
+owner_name: string, 
+/**
  * Items not yet in the cart.
  */
 open_count: number, created_at: string, updated_at: string, rev: number, };

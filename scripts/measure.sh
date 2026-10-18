@@ -13,10 +13,6 @@ else
   echo "memory: (container $container not running)"
 fi
 
-if [ -d web/dist/assets ]; then
-  total=0
-  for f in web/dist/assets/*.js web/dist/assets/*.css; do
-    total=$(( total + $(gzip -9c "$f" | wc -c) ))
-  done
-  echo "web:    $(( total / 1024 )) KB gzip (JS + CSS)"
+if [ -f web/dist/index.html ]; then
+  (cd web && ../scripts/initial-size.sh) | sed 's/^/web:    /'
 fi

@@ -5,8 +5,10 @@ pub mod images;
 pub mod items;
 pub mod lookup;
 pub mod products;
+pub mod shares;
 pub mod shops;
 pub mod staples;
+pub mod sync;
 
 use axum::{
     Router,
@@ -43,7 +45,9 @@ use crate::AppState;
         account::delete_user,
         households::list, households::create, households::patch, households::delete,
         households::add_member, households::patch_member, households::remove_member,
-        shops::shopping, shops::list_shops, shops::create_shop, shops::patch_shop, shops::delete_shop,
+        sync::shopping, sync::sync, sync::ticket, sync::events,
+        shares::list, shares::create, shares::patch, shares::delete,
+        shops::list_shops, shops::create_shop, shops::patch_shop, shops::delete_shop,
         shops::list_lists, shops::get_list, shops::create_list, shops::patch_list, shops::delete_list,
         items::get_categories, items::create_category, items::patch_category, items::delete_category,
         items::get_items, items::create_item, items::create_shop_item, items::patch_item,
@@ -62,6 +66,7 @@ use crate::AppState;
         (name = "shopping", description = "Shops, lists, categories, items and staples"),
         (name = "catalog", description = "Your item catalogue: everything you've added before"),
         (name = "products", description = "Brands, pictures and product lookups"),
+        (name = "sharing", description = "Sharing lists with people and households"),
     )
 )]
 pub struct ApiDoc;
@@ -181,7 +186,12 @@ pub fn router(state: AppState) -> Router {
             "/households/{id}/members/{user_id}",
             patch(households::patch_member).delete(households::remove_member),
         )
-        .route("/shopping", get(shops::shopping))
+        .route("/shopping", get(sync::shopping))
+        .route("/sync", get(sync::sync))
+        .route("/events", get(sync::events))
+        .route("/events/ticket", post(sync::ticket))
+        .route("/lists/{id}/shares", get(shares::list).post(shares::create))
+        .route("/shares/{id}", patch(shares::patch).delete(shares::delete))
         .route("/shops", get(shops::list_shops).post(shops::create_shop))
         .route(
             "/shops/{id}",
@@ -265,6 +275,10 @@ pub fn router(state: AppState) -> Router {
         .route("/healthz", get(|| async { "ok" }))
         .fallback(crate::static_files::serve)
         .layer(axum::extract::DefaultBodyLimit::max(BODY_LIMIT))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::events::publish_writes,
+        ))
         .layer(axum::middleware::from_fn_with_state(state.clone(), hsts))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_SECURITY_POLICY,

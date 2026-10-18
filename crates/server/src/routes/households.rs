@@ -237,6 +237,7 @@ pub async fn delete(
     let mut tx = state.db.write.begin().await?;
     let h = load_visible(&mut tx, &user, &id).await?;
     require_owner(&h, &user)?;
+    let members: Vec<String> = h.members.iter().map(|m| m.user_id.clone()).collect();
     let rev = next_rev(&mut tx).await?;
     let ts = now();
     sqlx::query("UPDATE households SET deleted_at = ?, updated_at = ?, rev = ? WHERE id = ?")
@@ -251,6 +252,8 @@ pub async fn delete(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
+    // Lists shared with the household are gone for its former members, also live.
+    state.bus.users(rev, members);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -357,5 +360,7 @@ pub async fn remove_member(
     ensure_owners(&mut tx).await?;
     bump(&mut tx, &id).await?;
     tx.commit().await?;
+    // Lists shared with the household are gone for them at once, also live.
+    state.bus.users(0, vec![user_id]);
     Ok(StatusCode::NO_CONTENT)
 }

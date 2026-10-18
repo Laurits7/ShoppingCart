@@ -39,6 +39,27 @@ pub async fn user_products(
     .await
 }
 
+/// For sync: the user's products changed after rev `since`, and every product someone else
+/// pinned an item to on a list the user can see (so its brand shows; read only).
+pub async fn synced_products(
+    conn: &mut SqliteConnection,
+    user_id: &str,
+    since: i64,
+) -> sqlx::Result<Vec<Product>> {
+    sqlx::query_as(&format!(
+        "SELECT {COLS} FROM products WHERE deleted_at IS NULL AND (
+             (user_id = ?1 AND rev > ?2)
+             OR (user_id != ?1 AND id IN (SELECT i.product_id FROM items i JOIN lists l ON l.id = i.list_id
+                                          WHERE {} AND i.deleted_at IS NULL)))
+         ORDER BY catalog_item_id, position, id",
+        crate::visibility::VISIBLE_LISTS
+    ))
+    .bind(user_id)
+    .bind(since)
+    .fetch_all(conn)
+    .await
+}
+
 /// The user's product preferences, optionally of one catalogue item.
 pub async fn user_preferences(
     conn: &mut SqliteConnection,

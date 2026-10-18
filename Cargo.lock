@@ -1942,6 +1942,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
+ "futures-util",
  "http-body-util",
  "image",
  "mime_guess",
@@ -1955,6 +1956,7 @@ dependencies = [
  "shoppingcart-domain",
  "sqlx",
  "tokio",
+ "tokio-stream",
  "tower",
  "tower-http",
  "tracing",
@@ -2405,6 +2407,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

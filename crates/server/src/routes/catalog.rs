@@ -164,10 +164,20 @@ async fn with_shops(
 
 /// The user's whole catalogue (hidden entries too), by name.
 pub async fn all(conn: &mut SqliteConnection, user_id: &str) -> sqlx::Result<Vec<CatalogItem>> {
+    since(conn, user_id, 0).await
+}
+
+/// The user's catalogue entries changed after rev `since`.
+pub async fn since(
+    conn: &mut SqliteConnection,
+    user_id: &str,
+    since: i64,
+) -> sqlx::Result<Vec<CatalogItem>> {
     let items = sqlx::query_as(&format!(
-        "SELECT {COLS} FROM catalog_items WHERE user_id = ? AND deleted_at IS NULL ORDER BY normalized_name"
+        "SELECT {COLS} FROM catalog_items WHERE user_id = ? AND deleted_at IS NULL AND rev > ? ORDER BY normalized_name"
     ))
     .bind(user_id)
+    .bind(since)
     .fetch_all(&mut *conn)
     .await?;
     with_shops(conn, user_id, items).await

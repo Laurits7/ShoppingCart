@@ -2,10 +2,9 @@
 //! WORKPLAN A.3). Handlers never check ownership themselves: they ask here, and anything a
 //! user may not see is a 404, so its existence never leaks.
 //!
-//! Phase 2: a list is visible to its owner only, and shops, staples and the catalogue are
-//! personal. Phase 4 adds shares (users and households) by extending `VISIBLE_LISTS`,
-//! `ROLE` and `list_role`; the rules for what each role allows live in
-//! `shoppingcart_domain::visibility`.
+//! A list is visible to its owner and to everyone it is shared with, directly or through a
+//! household they are a member of now (SPEC §6.8). Shops, staples, the catalogue and products
+//! are personal. What each role allows lives in `shoppingcart_domain::visibility`.
 
 use shoppingcart_domain::visibility::{self as rules};
 pub use shoppingcart_domain::visibility::{Need, Role};
@@ -16,11 +15,35 @@ use crate::{
     error::{ApiResult, AppError},
 };
 
-/// SQL condition selecting the live lists (alias `l`) visible to the user bound as `?1`.
-pub const VISIBLE_LISTS: &str = "(l.deleted_at IS NULL AND l.owner_id = ?1)";
+/// Condition on a `shares s` row: a live share of list `list` reaching the user bound as
+/// `?1`, directly or through a household they're in.
+fn share_reaches(list: &str) -> String {
+    format!(
+        "s.resource_type = 'list' AND s.resource_id = {list} AND s.deleted_at IS NULL
+         AND ((s.principal_type = 'user' AND s.principal_id = ?1)
+           OR (s.principal_type = 'household' AND s.principal_id IN
+                 (SELECT household_id FROM household_members WHERE user_id = ?1)))"
+    )
+}
 
-/// SQL expression for the role (alias `l`) of the user bound as `?1` on a visible list.
-pub const ROLE: &str = "(CASE WHEN l.owner_id = ?1 THEN 'owner' END)";
+/// SQL condition selecting the live lists (alias `l`) visible to the user bound as `?1`.
+pub const VISIBLE_LISTS: &str = "(l.deleted_at IS NULL AND (l.owner_id = ?1 OR EXISTS (
+     SELECT 1 FROM shares s
+     WHERE s.resource_type = 'list' AND s.resource_id = l.id AND s.deleted_at IS NULL
+       AND ((s.principal_type = 'user' AND s.principal_id = ?1)
+         OR (s.principal_type = 'household' AND s.principal_id IN
+               (SELECT household_id FROM household_members WHERE user_id = ?1))))))";
+
+/// SQL expression for the role (alias `l`) of the user bound as `?1` on a visible list:
+/// owner, else the strongest share.
+pub fn role_sql() -> String {
+    format!(
+        "(CASE WHEN l.owner_id = ?1 THEN 'owner'
+               WHEN EXISTS (SELECT 1 FROM shares s WHERE {} AND s.role = 'editor') THEN 'editor'
+               ELSE 'viewer' END)",
+        share_reaches("l.id")
+    )
+}
 
 pub fn role_name(r: Role) -> &'static str {
     match r {
@@ -41,7 +64,27 @@ pub async fn list_role(
             .bind(list_id)
             .fetch_optional(&mut *conn)
             .await?;
-    Ok(owner.and_then(|o| rules::list_role(o == user_id, [])))
+    let Some(owner) = owner else {
+        return Ok(None);
+    };
+    let roles: Vec<String> = sqlx::query_scalar(&format!(
+        "SELECT s.role FROM shares s WHERE {}",
+        share_reaches("?2")
+    ))
+    .bind(user_id)
+    .bind(list_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    Ok(rules::list_role(
+        owner == user_id,
+        roles.iter().map(|r| {
+            if r == "editor" {
+                Role::Editor
+            } else {
+                Role::Viewer
+            }
+        }),
+    ))
 }
 
 /// The user's role on a list if it allows `need`. Lists they can't see are 404; lists they

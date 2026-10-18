@@ -29,11 +29,12 @@ pub async fn user_staples(
     conn: &mut SqliteConnection,
     user_id: &str,
     shop_id: Option<&str>,
+    since: i64,
 ) -> sqlx::Result<Vec<Staple>> {
     sqlx::query_as(&format!(
         "SELECT {} FROM staples s JOIN shops p ON p.id = s.shop_id
          WHERE p.owner_id = ?1 AND p.deleted_at IS NULL AND s.deleted_at IS NULL
-           AND (?2 IS NULL OR s.shop_id = ?2)
+           AND (?2 IS NULL OR s.shop_id = ?2) AND s.rev > ?3
          ORDER BY s.shop_id, s.position, s.id",
         COLS.split(", ")
             .map(|c| format!("s.{c}"))
@@ -42,6 +43,7 @@ pub async fn user_staples(
     ))
     .bind(user_id)
     .bind(shop_id)
+    .bind(since)
     .fetch_all(conn)
     .await
 }
@@ -68,7 +70,7 @@ pub async fn list(
     let mut conn = state.db.read.acquire().await?;
     visibility::require_shop(&mut conn, &user, &shop_id).await?;
     Ok(Json(
-        user_staples(&mut conn, user.id(), Some(&shop_id)).await?,
+        user_staples(&mut conn, user.id(), Some(&shop_id), 0).await?,
     ))
 }
 

@@ -10,18 +10,16 @@ use shoppingcart_domain::{order, shopping};
 use sqlx::SqliteConnection;
 use ts_rs::TS;
 
-use super::{catalog, items, staples};
+use super::items;
 use crate::{
     AppState,
     auth::AuthUser,
     db::{next_position, next_rev},
     error::{ApiResult, AppError, bad, insert_err},
-    models::{
-        CatalogItem, Category, Image, Item, Product, ProductPreference, Shop, ShoppingList, Staple,
-    },
+    models::{Category, Shop, ShoppingList},
     positions::{Place, Scope},
     util::{double_option, id_or_new, name, now},
-    visibility::{self, Need, ROLE, VISIBLE_LISTS},
+    visibility::{self, Need, VISIBLE_LISTS},
 };
 
 const SHOP_COLS: &str = "id, name, color, position, default_list_id, created_at, updated_at, rev";
@@ -35,24 +33,32 @@ pub async fn load_shop(conn: &mut SqliteConnection, id: &str) -> sqlx::Result<Op
     .await
 }
 
-async fn user_shops(conn: &mut SqliteConnection, user_id: &str) -> sqlx::Result<Vec<Shop>> {
+/// The user's live shops changed after rev `since` (0 = all).
+pub async fn user_shops(
+    conn: &mut SqliteConnection,
+    user_id: &str,
+    since: i64,
+) -> sqlx::Result<Vec<Shop>> {
     sqlx::query_as(&format!(
-        "SELECT {SHOP_COLS} FROM shops WHERE owner_id = ? AND deleted_at IS NULL ORDER BY position, id"
+        "SELECT {SHOP_COLS} FROM shops WHERE owner_id = ? AND deleted_at IS NULL AND rev > ? ORDER BY position, id"
     ))
     .bind(user_id)
+    .bind(since)
     .fetch_all(conn)
     .await
 }
 
 /// Lists visible to the user bound as `?1`, narrowed by `cond`.
 fn list_select(cond: &str) -> String {
+    let role = visibility::role_sql();
     format!(
         "SELECT l.id, l.shop_id, l.owner_id, l.name, l.position, l.archived_at,
-                COALESCE(s.default_list_id = l.id, 0) AS is_default, {ROLE} AS role,
+                COALESCE(s.default_list_id = l.id, 0) AS is_default, {role} AS role,
+                s.name AS shop_name, u.display_name AS owner_name,
                 (SELECT COUNT(*) FROM items i
                  WHERE i.list_id = l.id AND i.deleted_at IS NULL AND i.checked_at IS NULL) AS open_count,
                 l.created_at, l.updated_at, l.rev
-         FROM lists l JOIN shops s ON s.id = l.shop_id
+         FROM lists l JOIN shops s ON s.id = l.shop_id JOIN users u ON u.id = l.owner_id
          WHERE {VISIBLE_LISTS} AND {cond}
          ORDER BY s.position, l.position, l.id"
     )
@@ -70,16 +76,21 @@ pub async fn load_list(
         .await
 }
 
-async fn visible_lists(
+/// Lists visible to the user (of one shop, or all), changed after rev `since`.
+pub async fn visible_lists(
     conn: &mut SqliteConnection,
     user_id: &str,
     shop_id: Option<&str>,
+    since: i64,
 ) -> sqlx::Result<Vec<ShoppingList>> {
-    sqlx::query_as(&list_select("(?2 IS NULL OR l.shop_id = ?2)"))
-        .bind(user_id)
-        .bind(shop_id)
-        .fetch_all(conn)
-        .await
+    sqlx::query_as(&list_select(
+        "(?2 IS NULL OR l.shop_id = ?2) AND l.rev > ?3",
+    ))
+    .bind(user_id)
+    .bind(shop_id)
+    .bind(since)
+    .fetch_all(conn)
+    .await
 }
 
 async fn bump_shop(conn: &mut SqliteConnection, id: &str) -> sqlx::Result<()> {
@@ -197,60 +208,6 @@ async fn tombstone_lists(conn: &mut SqliteConnection, cond: &str, id: &str) -> s
     Ok(())
 }
 
-// ---- the Shopping tab ------------------------------------------------------------------
-
-/// Everything the Shopping tab shows, in one response.
-#[derive(Serialize, TS, utoipa::ToSchema)]
-#[ts(export)]
-pub struct ShoppingData {
-    pub shops: Vec<Shop>,
-    pub lists: Vec<ShoppingList>,
-    pub categories: Vec<Category>,
-    pub items: Vec<Item>,
-    pub staples: Vec<Staple>,
-    pub catalog: Vec<CatalogItem>,
-    pub products: Vec<Product>,
-    pub preferences: Vec<ProductPreference>,
-    /// Your pictures in use (for their credits).
-    pub images: Vec<Image>,
-}
-
-#[utoipa::path(get, path = "/shopping", tag = "shopping", summary = "Everything on your Shopping tab: shops, lists, categories, items, staples, your catalogue and products", responses((status = 200, body = ShoppingData), (status = 401, body = crate::error::Problem)))]
-pub async fn shopping(
-    State(state): State<AppState>,
-    user: AuthUser,
-) -> ApiResult<Json<ShoppingData>> {
-    let mut conn = state.db.read.begin().await?;
-    let uid = user.id();
-    let shops = user_shops(&mut conn, uid).await?;
-    let lists = visible_lists(&mut conn, uid, None).await?;
-    let categories = items::visible_categories(&mut conn, uid, None).await?;
-    let items = items::visible_items(&mut conn, uid, None).await?;
-    let staples = staples::user_staples(&mut conn, uid, None).await?;
-    let catalog = catalog::all(&mut conn, uid).await?;
-    let products = super::products::user_products(&mut conn, uid, None).await?;
-    let preferences = super::products::user_preferences(&mut conn, uid, None).await?;
-    let images = sqlx::query_as(
-        "SELECT id, width, height, source, source_ref, created_at FROM images WHERE owner_id = ?1
-           AND (id IN (SELECT image_id FROM products WHERE user_id = ?1 AND deleted_at IS NULL)
-                OR id IN (SELECT image_id FROM catalog_items WHERE user_id = ?1 AND deleted_at IS NULL))",
-    )
-    .bind(uid)
-    .fetch_all(&mut *conn)
-    .await?;
-    Ok(Json(ShoppingData {
-        images,
-        products,
-        preferences,
-        shops,
-        lists,
-        categories,
-        items,
-        staples,
-        catalog,
-    }))
-}
-
 // ---- shops -------------------------------------------------------------------------------
 
 #[utoipa::path(get, path = "/shops", tag = "shopping", summary = "Your shops", responses((status = 200, body = Vec<Shop>), (status = 401, body = crate::error::Problem)))]
@@ -259,7 +216,7 @@ pub async fn list_shops(
     user: AuthUser,
 ) -> ApiResult<Json<Vec<Shop>>> {
     let mut conn = state.db.read.acquire().await?;
-    Ok(Json(user_shops(&mut conn, user.id()).await?))
+    Ok(Json(user_shops(&mut conn, user.id(), 0).await?))
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
@@ -288,8 +245,8 @@ async fn shop_bundle(
     shop_id: &str,
 ) -> ApiResult<ShopBundle> {
     let shop = load_shop(conn, shop_id).await?.ok_or(AppError::NotFound)?;
-    let lists = visible_lists(conn, user_id, Some(shop_id)).await?;
-    let categories = items::visible_categories(conn, user_id, Some(shop_id)).await?;
+    let lists = visible_lists(conn, user_id, Some(shop_id), 0).await?;
+    let categories = items::visible_categories(conn, user_id, Some(shop_id), 0).await?;
     Ok(ShopBundle {
         shop,
         lists,
@@ -480,7 +437,7 @@ pub async fn list_lists(
     user: AuthUser,
 ) -> ApiResult<Json<Vec<ShoppingList>>> {
     let mut conn = state.db.read.acquire().await?;
-    Ok(Json(visible_lists(&mut conn, user.id(), None).await?))
+    Ok(Json(visible_lists(&mut conn, user.id(), None, 0).await?))
 }
 
 #[utoipa::path(get, path = "/lists/{id}", tag = "shopping", summary = "One list", params(("id" = String, Path, description = "ULID")), responses((status = 200, body = ShoppingList), (status = 404, body = crate::error::Problem)))]

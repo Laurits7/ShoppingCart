@@ -144,6 +144,10 @@ pub struct ShoppingList {
     /// Your relation to the list: what you may do with it.
     #[ts(type = "'owner' | 'editor' | 'viewer'")]
     pub role: String,
+    /// The shop it belongs to (for lists shared with you, the owner's shop).
+    pub shop_name: String,
+    /// Who owns it (display name).
+    pub owner_name: String,
     /// Items not yet in the cart.
     #[ts(type = "number")]
     pub open_count: i64,
@@ -301,4 +305,28 @@ pub struct ProductPreference {
     pub catalog_item_id: String,
     pub shop_id: Option<String>,
     pub product_id: String,
+}
+
+// ---- sharing (SPEC §5.4, §6.8) ------------------------------------------------------
+
+/// Who a list is shared with, and how.
+#[derive(Debug, Clone, Serialize, FromRow, TS, utoipa::ToSchema)]
+#[ts(export)]
+pub struct Share {
+    pub id: String,
+    pub list_id: String,
+    #[ts(type = "'user' | 'household'")]
+    pub principal_type: String,
+    pub principal_id: String,
+    /// The person's display name or the household's name.
+    pub name: String,
+    #[ts(type = "'editor' | 'viewer'")]
+    pub role: String,
+    /// For a household: who is in it now (display names), so the share sheet can say who
+    /// sees the list and why.
+    #[sqlx(skip)]
+    pub members: Vec<String>,
+    pub created_at: String,
+    #[ts(type = "number")]
+    pub rev: i64,
 }

@@ -148,3 +148,30 @@ All proposed defaults (Q-1 … Q-10) were accepted by the owner on 2026-10-18.
 - **D-43 · Barcode adds**: scanning (or typing) a barcode in quick add uses your product with that
   barcode, else looks it up and adds it as a new product of a new or existing catalogue item.
   Imports by API/Mealie match a product only by its exact name (§6.4b).
+- **D-44 · Initial load only**: the budget (§4.1, < 60 KB gzip) counts what `index.html` loads;
+  Settings, the item catalogue, Wishlist, the brand chooser (with the Open Food Facts search)
+  and the barcode scanner load on first use. `scripts/initial-size.sh` measures it in CI and in
+  `measure.sh`. After this: 46 KB initial.
+
+## Phase 4 (2026-10-18)
+
+- **D-45 · Nudge, then sync**: instead of an event-log table (§5.4), a middleware takes the revs
+  each successful write produced, finds the lists and users they touched, and the SSE stream
+  sends a subscriber only `change` + the new rev, and only if it can see one of those lists at
+  delivery time (or could until this change, so revoking reaches it once), or its own data
+  changed. All data then comes through `/sync`, which uses the same visibility SQL as every
+  read. A handler can't forget to publish, and no event can carry data past the rules.
+- **D-46 · `/sync` shape**: changed rows per kind after `since`, `deleted` ids (only of your own
+  things or lists you see), and `visible_lists`; the client drops lists not in it and reloads
+  everything when a new one appears (its older rows aren't in the delta). `/shopping` is
+  `/sync?since=0`. Others' products pinned on lists you see come along (read only).
+- **D-47 · Shares**: only households you're in can be shared with; sharing again changes the
+  role; a member leaves a household share by leaving the household. Removed household members
+  are told live by the household handlers (the rev scan can't see them any more).
+- **D-48 · Outbox scope**: item and category changes (add, tick, amounts, edits, deletes,
+  restore, finish, staples onto a list, moves, brand pins) are queued in IndexedDB and sent in
+  order; the −/+ buttons send the resulting amount, so a retry can't step twice. Shops, lists,
+  catalogue, products and sharing need the connection. Refused changes are dropped with a
+  message and the store reloads; a sync never overwrites something still waiting to be sent.
+- **D-49 · SSE tickets**: browsers use the session cookie; API clients that can't set headers on
+  an event stream get a one-time ticket (`POST /events/ticket`, a minute, in memory).

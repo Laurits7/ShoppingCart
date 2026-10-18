@@ -70,15 +70,17 @@ pub async fn visible_categories(
     conn: &mut SqliteConnection,
     user_id: &str,
     shop_id: Option<&str>,
+    since: i64,
 ) -> sqlx::Result<Vec<Category>> {
     sqlx::query_as(&format!(
         "SELECT {} FROM categories c JOIN lists l ON l.id = c.list_id
-         WHERE {VISIBLE_LISTS} AND c.deleted_at IS NULL AND (?2 IS NULL OR l.shop_id = ?2)
+         WHERE {VISIBLE_LISTS} AND c.deleted_at IS NULL AND (?2 IS NULL OR l.shop_id = ?2) AND c.rev > ?3
          ORDER BY c.list_id, c.position, c.id",
         cols("c.", CAT_COLS)
     ))
     .bind(user_id)
     .bind(shop_id)
+    .bind(since)
     .fetch_all(conn)
     .await
 }
@@ -102,15 +104,17 @@ pub async fn visible_items(
     conn: &mut SqliteConnection,
     user_id: &str,
     list_id: Option<&str>,
+    since: i64,
 ) -> sqlx::Result<Vec<Item>> {
     sqlx::query_as(&format!(
         "SELECT {} FROM items i JOIN lists l ON l.id = i.list_id
-         WHERE {VISIBLE_LISTS} AND i.deleted_at IS NULL AND (?2 IS NULL OR i.list_id = ?2)
+         WHERE {VISIBLE_LISTS} AND i.deleted_at IS NULL AND (?2 IS NULL OR i.list_id = ?2) AND i.rev > ?3
          ORDER BY i.list_id, i.position, i.id",
         cols("i.", ITEM_COLS)
     ))
     .bind(user_id)
     .bind(list_id)
+    .bind(since)
     .fetch_all(conn)
     .await
 }
@@ -653,7 +657,7 @@ pub async fn get_items(
     let mut conn = state.db.read.acquire().await?;
     visibility::require_list(&mut conn, &user, &list_id, Need::Read).await?;
     Ok(Json(
-        visible_items(&mut conn, user.id(), Some(&list_id)).await?,
+        visible_items(&mut conn, user.id(), Some(&list_id), 0).await?,
     ))
 }
 

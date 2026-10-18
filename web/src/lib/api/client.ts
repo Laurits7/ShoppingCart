@@ -50,6 +50,8 @@ export const api = {
   post: <T>(p: string, b?: unknown) => request<T>('POST', p, b ?? {}),
   patch: <T>(p: string, b: unknown) => request<T>('PATCH', p, b),
   put: <T>(p: string, b: unknown) => request<T>('PUT', p, b),
+  /** Any method (the outbox replays queued changes with this). */
+  send: <T>(method: string, p: string, b?: unknown) => request<T>(method, p, method === 'DELETE' ? undefined : (b ?? {})),
   del: <T = void>(p: string) => request<T>('DELETE', p),
   /** Send a file (a picture) as the raw request body. */
   upload: <T>(p: string, file: Blob) => request<T>('POST', p, file),
