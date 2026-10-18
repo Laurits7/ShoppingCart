@@ -64,3 +64,7 @@ Pi 4 is a few times slower.
    that version.
 4. The GHCR package of a private repository is private: make it public in the package's
    settings if others should pull it without signing in.
+
+Between releases, every push to `main` that passes CI also publishes
+`ghcr.io/laurits7/shoppingcart:edge` (and `:sha-<commit>`) for amd64 and arm64, for trying the
+latest changes; `latest` only ever points at a release.
