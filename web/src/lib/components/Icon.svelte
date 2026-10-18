@@ -8,6 +8,16 @@
     plus: 'M12 5v14 M5 12h14',
     x: 'M6 6l12 12 M18 6L6 18',
     logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9',
+    minus: 'M5 12h14',
+    check: 'M5 12.5l4.5 4.5L19 7.5',
+    circle: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z',
+    checkCircle: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M8 12.5l3 3 5-6',
+    more: 'M5 12h.01 M12 12h.01 M19 12h.01',
+    chevronDown: 'M6 9l6 6 6-6',
+    chevronRight: 'M9 6l6 6-6 6',
+    star: 'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z',
+    staples: 'M9 6h11 M9 12h11 M9 18h11 M4 6l1 1 2-2 M4 12l1 1 2-2 M4 18l1 1 2-2',
+    trash: 'M4 7h16 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3',
   } as const
   export type IconName = keyof typeof PATHS
 </script>

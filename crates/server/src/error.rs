@@ -71,3 +71,14 @@ impl IntoResponse for AppError {
             .into_response()
     }
 }
+
+/// A failed insert: a duplicate id (e.g. a client reusing an id that belongs to something
+/// else) is a 409, anything else an internal error.
+pub fn insert_err(e: sqlx::Error) -> AppError {
+    match e {
+        sqlx::Error::Database(d) if d.is_unique_violation() => {
+            AppError::Conflict("id already in use".into())
+        }
+        e => e.into(),
+    }
+}

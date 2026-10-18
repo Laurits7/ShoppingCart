@@ -77,3 +77,31 @@ All proposed defaults (Q-1 … Q-10) were accepted by the owner on 2026-10-18.
   GET/HEAD. Sessions slide (refreshed at most hourly) and expired ones are purged hourly.
 - **D-26 · Argon2id parameters**: OWASP minimum (19 MiB, t=2, p=1), at most two hashes at once to
   bound memory on a Pi.
+
+## Phase 2 (2026-10-18)
+
+- **D-27 · Per-shop catalogue counts**: a small `catalog_shop_uses` table (catalogue item × shop:
+  count, last use) next to the spec's single `shop_id`, because the frequent-item chips and the
+  shop boost in suggestions need "how often at *this* shop", not just "where last".
+- **D-28 · `GET /shopping` until `/sync`**: the web app loads the whole Shopping tab (shops,
+  lists, categories, items, staples, catalogue) in one request. Phase 4's `GET /sync?since=0`
+  replaces it for the web app; it stays as a convenience for API clients.
+- **D-29 · Ordering keys now, moves in Phase 3**: `domain::order` (and its TS mirror) came over
+  from Streamline in Phase 2 because every new row needs a position; new things are appended.
+  Move/reorder endpoints and drag and drop stay in 3.1–3.3.
+- **D-30 · Amount rules**: a typed amount without a unit means pieces ("milk 2"); a bare name
+  takes the catalogue's usual amount and unit. The duplicate guard adds up the same unit and
+  converts g↔kg and ml/cl/dl↔l; other unit mixes (1 l of milk + 2 milk) become a separate row.
+  Ticked items never take duplicates. A merged create is remembered for a day
+  (`item_merges`), so retrying it doesn't add the amount twice.
+- **D-31 · Category names unique per list** (case-insensitive), so auto-categorising by name is
+  unambiguous. The list view hides empty categories; collapsing is remembered per device.
+- **D-32 · Failed changes**: until the outbox (Phase 4), a change the server refuses shows an
+  error and the store reloads.
+- **D-33 · Item source**: items added with an API token get `source = "api"`, from the web app
+  `manual`, from staples `staple`.
+- **D-34 · Summary page instead of a switcher (owner request)**: the Shopping tab is one page
+  with every shop, each list as a card with its open items (tick and −/+ in place), its own
+  quick add, and the cart folded into a line with *Finish shopping*. A list's title opens it full
+  screen by category (`/list/{id}`). This replaces the drop-down shop switcher and "open the
+  last-used list" (§6.1), and makes the separate quick-add in the switcher (§6.2) unnecessary.

@@ -8,6 +8,7 @@ pub mod models;
 pub mod routes;
 pub mod static_files;
 pub mod util;
+pub mod visibility;
 
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Instant};
 
@@ -76,7 +77,8 @@ pub async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Hourly housekeeping: drop expired sessions.
+/// Hourly housekeeping: drop expired sessions, tombstones older than 30 days and old
+/// duplicate-guard records.
 fn spawn_cleanup(state: AppState) {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
@@ -88,6 +90,9 @@ fn spawn_cleanup(state: AppState) {
                 .await
             {
                 tracing::warn!("session cleanup failed: {e}");
+            }
+            if let Err(e) = db::purge(&state.db.write).await {
+                tracing::warn!("tombstone cleanup failed: {e}");
             }
         }
     });

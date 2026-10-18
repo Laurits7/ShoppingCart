@@ -198,13 +198,15 @@ owner shared it there (D-5).
   says how many lists and items go with it.
 - A shop holds one or more lists (e.g. "Weekly", "Party on Saturday"). Lists can be created,
   renamed, reordered, archived and deleted. One of them is the **default**.
-- The Shopping tab opens on the last-used list; the shop switcher shows each shop with its
-  open item count. Lists shared with me appear under their owner's shop name, marked as shared.
+- The Shopping tab is a **summary page**: every shop with its lists, each list as a card with
+  its open items (tick and −/+ in place), its own quick add and the cart folded into one line
+  with *Finish shopping*. A list's title opens it full screen, grouped by category (D-34).
+  Lists shared with me appear under their owner's shop name, marked as shared.
 - Move an item (or a selection of items) to another list, including a list of another shop.
 
 ### 6.2 Default list
-- Each shop's default list is where items land when no list is chosen: quick-add from the shop
-  switcher, `POST /shops/{id}/items` in the API, Mealie imports (§6.10).
+- Each shop's default list is where items land when no list is chosen:
+  `POST /shops/{id}/items` in the API, Mealie imports (§6.10).
 - Creating a shop creates its default list ("Shopping list"); any list can be made default;
   the default list can't be deleted until another is made default.
 

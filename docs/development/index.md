@@ -36,3 +36,4 @@ Filled in at each phase gate (targets in spec §4.1).
 | Phase | Image | Idle RSS | Initial JS+CSS (gzip) |
 |---|---|---|---|
 | 1 (2026-10-18) | 5 MB | 2.9 MiB | 25 KB |
+| 2 (2026-10-18) | 6 MB | 3.9 MiB | 40 KB |

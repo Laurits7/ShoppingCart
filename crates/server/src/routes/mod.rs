@@ -1,5 +1,9 @@
 pub mod account;
+pub mod catalog;
 pub mod households;
+pub mod items;
+pub mod shops;
+pub mod staples;
 
 use axum::{
     Router,
@@ -36,11 +40,20 @@ use crate::AppState;
         account::delete_user,
         households::list, households::create, households::patch, households::delete,
         households::add_member, households::patch_member, households::remove_member,
+        shops::shopping, shops::list_shops, shops::create_shop, shops::patch_shop, shops::delete_shop,
+        shops::list_lists, shops::get_list, shops::create_list, shops::patch_list, shops::delete_list,
+        items::get_categories, items::create_category, items::patch_category, items::delete_category,
+        items::get_items, items::create_item, items::create_shop_item, items::patch_item,
+        items::step_item, items::delete_item, items::restore_items, items::finish, items::add_staples,
+        staples::list, staples::create, staples::patch, staples::delete,
+        catalog::search, catalog::frequent, catalog::patch, catalog::delete, catalog::merge,
     ),
     tags(
         (name = "account", description = "Setup, sign-in, profile, sessions and API tokens"),
         (name = "users", description = "User management (admins) and the user directory"),
         (name = "households", description = "Households: groups of people to share with"),
+        (name = "shopping", description = "Shops, lists, categories, items and staples"),
+        (name = "catalog", description = "Your item catalogue: everything you've added before"),
     )
 )]
 pub struct ApiDoc;
@@ -159,6 +172,55 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/households/{id}/members/{user_id}",
             patch(households::patch_member).delete(households::remove_member),
+        )
+        .route("/shopping", get(shops::shopping))
+        .route("/shops", get(shops::list_shops).post(shops::create_shop))
+        .route(
+            "/shops/{id}",
+            patch(shops::patch_shop).delete(shops::delete_shop),
+        )
+        .route("/shops/{id}/items", post(items::create_shop_item))
+        .route(
+            "/shops/{id}/staples",
+            get(staples::list).post(staples::create),
+        )
+        .route(
+            "/staples/{id}",
+            patch(staples::patch).delete(staples::delete),
+        )
+        .route("/lists", get(shops::list_lists).post(shops::create_list))
+        .route(
+            "/lists/{id}",
+            get(shops::get_list)
+                .patch(shops::patch_list)
+                .delete(shops::delete_list),
+        )
+        .route(
+            "/lists/{id}/categories",
+            get(items::get_categories).post(items::create_category),
+        )
+        .route(
+            "/lists/{id}/items",
+            get(items::get_items).post(items::create_item),
+        )
+        .route("/lists/{id}/finish", post(items::finish))
+        .route("/lists/{id}/staples", post(items::add_staples))
+        .route(
+            "/categories/{id}",
+            patch(items::patch_category).delete(items::delete_category),
+        )
+        .route("/items/restore", post(items::restore_items))
+        .route(
+            "/items/{id}",
+            patch(items::patch_item).delete(items::delete_item),
+        )
+        .route("/items/{id}/step", post(items::step_item))
+        .route("/catalog", get(catalog::search))
+        .route("/catalog/frequent", get(catalog::frequent))
+        .route("/catalog/merge", post(catalog::merge))
+        .route(
+            "/catalog/{id}",
+            patch(catalog::patch).delete(catalog::delete),
         )
         .route("/openapi.json", get(openapi_json))
         .fallback(|| async { crate::error::AppError::NotFound });

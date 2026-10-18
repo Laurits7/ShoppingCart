@@ -29,6 +29,10 @@
 </div>
 
 <Profile />
+<a class="card link-card" href="/settings/catalog">
+  <span><strong>Item catalogue</strong><br /><span class="muted">Everything you've added: categories, usual amounts, duplicates</span></span>
+  <Icon name="chevronRight" />
+</a>
 <Households />
 <Security />
 <Tokens />
@@ -51,6 +55,19 @@
   }
   .about {
     padding: 20px;
+  }
+  .link-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    color: inherit;
+    text-decoration: none;
+  }
+  .link-card:hover {
+    background: var(--surface-2);
   }
   .about p {
     margin: 8px 0 0;

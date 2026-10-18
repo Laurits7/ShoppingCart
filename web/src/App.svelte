@@ -4,8 +4,10 @@
   import Toasts from './lib/components/Toasts.svelte'
   import { match, router } from './lib/router.svelte'
   import { session } from './lib/session.svelte'
+  import { shopping } from './lib/shopping.svelte'
   import Login from './views/Login.svelte'
   import Settings from './views/Settings.svelte'
+  import CatalogSettings from './views/settings/Catalog.svelte'
   import Shopping from './views/Shopping.svelte'
   import Wishlist from './views/Wishlist.svelte'
 
@@ -13,6 +15,7 @@
 
   async function boot() {
     phase = 'loading'
+    shopping.reset()
     try {
       await session.load()
       phase = 'app'
@@ -34,6 +37,7 @@
   onUnauthorized(() => {
     if (phase === 'app') {
       session.me = null
+      shopping.reset()
       phase = 'login'
     }
   })
@@ -68,11 +72,15 @@
     </nav>
     <main>
       {#if route.name === 'shopping'}
-        <Shopping />
+        <Shopping listId={route.listId} />
       {:else if route.name === 'wishlist'}
         <Wishlist />
       {:else if route.name === 'settings'}
-        <Settings onlogout={() => ((session.me = null), (phase = 'login'))} />
+        {#if route.page === 'catalog'}
+          <CatalogSettings />
+        {:else}
+          <Settings onlogout={() => ((session.me = null), shopping.reset(), (phase = 'login'))} />
+        {/if}
       {:else}
         <h1>Not found</h1>
         <p><a href="/">Go to your lists</a></p>

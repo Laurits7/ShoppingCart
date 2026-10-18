@@ -40,3 +40,47 @@ pub async fn next_rev(conn: &mut SqliteConnection) -> sqlx::Result<i64> {
         .fetch_one(conn)
         .await
 }
+
+/// Ordering key after the last row of `table` whose `parent` column is `parent_id`
+/// (tombstones included, so a restored row never shares a key).
+pub async fn next_position(
+    conn: &mut SqliteConnection,
+    table: &str,
+    parent: &str,
+    parent_id: &str,
+) -> sqlx::Result<String> {
+    let last: Option<String> = sqlx::query_scalar(&format!(
+        "SELECT MAX(position) FROM {table} WHERE {parent} = ?"
+    ))
+    .bind(parent_id)
+    .fetch_one(conn)
+    .await?;
+    Ok(shoppingcart_domain::order::key_after(last.as_deref()))
+}
+
+/// Forget tombstones older than 30 days (children first, for the foreign keys) and
+/// duplicate-guard records older than a day.
+pub async fn purge(pool: &SqlitePool) -> sqlx::Result<()> {
+    let ago = |days: i64| {
+        (chrono::Utc::now() - chrono::Duration::days(days))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    };
+    let old = ago(30);
+    let mut tx = pool.begin().await?;
+    for sql in [
+        "DELETE FROM items WHERE deleted_at < ?1",
+        "DELETE FROM categories WHERE deleted_at < ?1",
+        "DELETE FROM staples WHERE deleted_at < ?1",
+        "DELETE FROM catalog_shop_uses WHERE catalog_item_id IN (SELECT id FROM catalog_items WHERE deleted_at < ?1)",
+        "DELETE FROM catalog_items WHERE deleted_at < ?1",
+        "DELETE FROM lists WHERE deleted_at < ?1 AND id NOT IN (SELECT list_id FROM items) AND id NOT IN (SELECT list_id FROM categories)",
+        "DELETE FROM shops WHERE deleted_at < ?1 AND id NOT IN (SELECT shop_id FROM lists) AND id NOT IN (SELECT shop_id FROM staples)",
+    ] {
+        sqlx::query(sql).bind(&old).execute(&mut *tx).await?;
+    }
+    sqlx::query("DELETE FROM item_merges WHERE created_at < ?")
+        .bind(ago(1))
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await
+}

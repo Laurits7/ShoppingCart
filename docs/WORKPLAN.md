@@ -2,7 +2,8 @@
 
 > Companion to [`SPEC.md`](SPEC.md). Section numbers like §6.8 refer to the spec.
 > Status (2026-10-18): Phase 0 (spec, plan, docs skeleton) done. Part A and all Part C defaults
-> confirmed (D-12..D-21). **Phase 1 done** (D-22..D-26). **Next: Phase 2 (shopping core).**
+> confirmed (D-12..D-21). **Phase 1 done** (D-22..D-26). **Phase 2 chunks done** (D-27..D-34); gate needs the owner's
+> manual check. **Next: Phase 3 (drag and drop).**
 > Legend: `[x]` done · `[~]` partly done (remaining work noted) · `[ ]` not started.
 
 ## How to use this plan
@@ -81,21 +82,23 @@ SQL) → SQLite (WAL, one writer pool of 1, reader pool) → event log row → S
       ~3 MB idle, 25 KB web); manual phone/desktop smoke test by the owner still to do.
 
 ### Phase 2. Shopping core
-- [ ] **2.1 Shops and lists API**: shops, lists, default list rules (§6.2), visibility module
+- [x] **2.1 Shops and lists API**: shops, lists, default list rules (§6.2), visibility module
       (owner only for now, designed for shares), tests.
-- [ ] **2.2 Categories and items API**: CRUD, tick/untick, finish shopping (+ undo window),
+- [x] **2.2 Categories and items API**: CRUD, tick/untick, finish shopping (+ undo window),
       amount/unit + step rules (`domain::amount`), +/- endpoint, quick-add parsing, duplicate
       guard that adds to the amount, idempotent client ids,
       `POST /shops/{id}/items`.
-- [ ] **2.3 Staples and item catalogue**: staples CRUD, "add staples" endpoint; catalogue
+- [x] **2.3 Staples and item catalogue**: staples CRUD, "add staples" endpoint; catalogue
       table filled on every add, ranking (`domain::catalog`), `GET /catalog?q=`, frequent items
       per shop, auto-category; catalogue management API (rename, merge, hide, delete).
-- [ ] **2.4 Shopping UI**: shop switcher with counts, list view with categories, quick add with
+- [x] **2.4 Shopping UI**: summary page of all lists with their items (D-34), list view with categories, quick add with
       instant client-side catalogue suggestions and frequent-item chips, −/+ amount stepper,
       tick → *In the cart*, finish shopping, edit/delete with undo, staples sheet,
       shop/list/category management, Settings → Item catalogue. Optimistic store.
-- [ ] **2.5 Docs**: "Shops and lists" guide, API page update.
-- [ ] **Phase 2 gate**.
+- [x] **2.5 Docs**: "Shops and lists" guide, API page update.
+- [~] **Phase 2 gate**: checks, tests, docs, docker run and measurements done (6 MB image,
+      ~4 MB idle, 40 KB web); the manual phone/desktop smoke test by the owner still to do.
+      The shop switcher became a summary page of all lists with their items (D-34).
 
 ### Phase 3. Drag and drop
 - [ ] **3.1 Fractional indexing** in `domain::order` (keys between, rebalance), property tests;
@@ -127,7 +130,7 @@ SQL) → SQLite (WAL, one writer pool of 1, reader pool) → event log row → S
 - [ ] **4.3 List sharing** (§6.8): shares table, user/household principals, editor/viewer,
       visibility module extended, revocation closes access on live connections; tests for every
       endpoint.
-- [ ] **4.4 Share UI**: share sheet, "shared with me" in shop switcher, leave list.
+- [ ] **4.4 Share UI**: share sheet, "shared with me" on the summary page, leave list.
 - [ ] **4.5 Docs**: "Households and sharing" guide.
 - [ ] **Phase 4 gate**.
 
