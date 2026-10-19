@@ -7,6 +7,12 @@ one data folder, and it works from any phone, tablet or computer on your network
     Everything described here works, ready for version 1.0.0. What changed between versions is
     in the [changelog](https://github.com/Laurits7/ShoppingCart/blob/main/CHANGELOG.md).
 
+<div class="screens" markdown>
+![The Shopping page: the inbox, and the Weekly list with categories, amounts and ticked items](assets/screenshots/shopping.png){ width="240" }
+![A list opened on its own, with ticked items greyed out at the end](assets/screenshots/list.png){ width="240" }
+![A wishlist with sections, prices and priorities](assets/screenshots/wishlist.png){ width="240" }
+</div>
+
 - **Shopping lists per shop**: categories, drag-and-drop ordering, templates of your usual
   items, and an inbox. See [Shops and lists](guides/shopping.md).
 - **Wishlists and gift lists**: topic sections for your own wishes, and gift ideas for others

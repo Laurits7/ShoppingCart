@@ -1,0 +1,14 @@
+/* Screenshots side by side on the home page, wrapping on a phone. */
+.screens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 1em 0;
+}
+.screens p {
+  display: contents;
+}
+.screens img {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 12px;
+}

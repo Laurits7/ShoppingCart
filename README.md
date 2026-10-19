@@ -1,6 +1,29 @@
 # ShoppingCart
 
+[![CI](https://github.com/Laurits7/ShoppingCart/actions/workflows/ci.yml/badge.svg)](https://github.com/Laurits7/ShoppingCart/actions/workflows/ci.yml)
+[![Docs](https://github.com/Laurits7/ShoppingCart/actions/workflows/docs.yml/badge.svg)](https://laurits7.github.io/ShoppingCart/)
+[![Release](https://img.shields.io/github/v/release/Laurits7/ShoppingCart?sort=semver)](https://github.com/Laurits7/ShoppingCart/releases)
+[![Image](https://img.shields.io/badge/ghcr.io-laurits7%2Fshoppingcart-2496ED?logo=docker&logoColor=white)](https://github.com/Laurits7/ShoppingCart/pkgs/container/shoppingcart)
+[![License: GPL-3.0](https://img.shields.io/github/license/Laurits7/ShoppingCart)](LICENSE)
+
 A lean, self-hosted shopping list and wishlist app for a household.
+
+<table>
+  <tr>
+    <td><img src="docs/assets/screenshots/shopping.png" alt="The Shopping page: the inbox, and the Weekly list with categories, amounts and ticked items" width="220"></td>
+    <td><img src="docs/assets/screenshots/list.png" alt="A list opened on its own, with quick add, often-bought chips and ticked items greyed out at the end" width="220"></td>
+    <td><img src="docs/assets/screenshots/templates.png" alt="The Templates tab: templates per shop with a New list button each" width="220"></td>
+    <td><img src="docs/assets/screenshots/wishlist.png" alt="A wishlist with sections, prices, priorities and notes" width="220"></td>
+  </tr>
+  <tr>
+    <td align="center">Every list on one page</td>
+    <td align="center">A list in the shop</td>
+    <td align="center">Templates</td>
+    <td align="center">Wishlists</td>
+  </tr>
+</table>
+
+![The Shopping page on a desktop, in the dark theme](docs/assets/screenshots/desktop-dark.png)
 
 - **Shopping lists per shop**, split into categories (Dairy, Meat, Vegetables…), ordered by
   drag and drop, with templates per shop and an inbox.

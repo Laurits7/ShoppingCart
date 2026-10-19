@@ -76,6 +76,9 @@
     {/if}
     {#if checked || readonly}
       <span class="amount static"><span class="sr-only">Amount </span>{amount}</span>
+    {:else if onassign}
+      <!-- In the inbox you sort rather than shop: no stepper, so the name has room on a phone. -->
+      <button class="amount" data-nodrag aria-label="Amount of {item.name}: {amount}. Change" onclick={() => onedit(item, 'amount')}>{amount}</button>
     {:else}
       <span class="stepper" data-nodrag>
         <button class="icon-btn" aria-label="Less {item.name}" onclick={() => shopping.step(item, false)}><Icon name="minus" size={18} /></button>
